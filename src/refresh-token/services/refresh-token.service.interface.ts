@@ -1,0 +1,23 @@
+import { RefreshTokenEntity } from '../entities/refresh-token.entity.js';
+import { EntityManager } from 'typeorm';
+
+export interface SaveRefreshTokenParams {
+  token: string;
+  sub: string;
+  type: 'student' | 'admin';
+  expiresIn: string;
+  familyId?: string;
+  sessionExpiresAt?: Date | null;
+  clientId?: number;                // App OAuth asociada. Obligatorio cuando type === 'student', ausente cuando type === 'admin'.
+}
+
+export interface IRefreshTokenService {
+  save(params: SaveRefreshTokenParams): Promise<void>;
+  consume(token: string): Promise<RefreshTokenEntity>;
+  revokeFamily(token: string): Promise<void>;
+  revokeAllForSub(sub: string, manager?: EntityManager): Promise<void>;
+  // Revoca todos los refresh tokens activos de alumnos asociados a una app OAuth.
+  // Se llama al suspender o eliminar un cliente OAuth.
+  revokeAllForClient(clientId: number, manager?: EntityManager): Promise<void>;
+  purgeExpired(): Promise<void>;
+}

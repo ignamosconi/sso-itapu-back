@@ -17,6 +17,7 @@ const oauth_client_controller_js_1 = require("./controllers/oauth-client.control
 const admin_jwt_guard_js_1 = require("../auth/guards/admin-jwt.guard.js");
 const credential_token_module_js_1 = require("../credential-token/credential-token.module.js");
 const refresh_token_module_js_1 = require("../refresh-token/refresh-token.module.js");
+const mail_module_js_1 = require("../mail/mail.module.js");
 let OAuthClientModule = class OAuthClientModule {
 };
 exports.OAuthClientModule = OAuthClientModule;
@@ -28,6 +29,7 @@ exports.OAuthClientModule = OAuthClientModule = __decorate([
             jwt_1.JwtModule.register({}),
             credential_token_module_js_1.CredentialTokenModule,
             refresh_token_module_js_1.RefreshTokenModule,
+            mail_module_js_1.MailModule,
         ],
         controllers: [oauth_client_controller_js_1.OAuthClientController],
         providers: [

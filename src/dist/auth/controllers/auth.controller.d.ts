@@ -9,6 +9,10 @@ import { CodeResponseDto } from '../dtos/code-response.dto.js';
 import { TokenResponseDto } from '../dtos/token-response.dto.js';
 import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
+import { CheckUsernameRequestDto } from '../dtos/check-username-request.dto.js';
+import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js';
+import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
+import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
 export declare class AuthController implements IAuthController {
     private readonly authService;
     constructor(authService: IAuthService);
@@ -18,4 +22,7 @@ export declare class AuthController implements IAuthController {
     refresh(refreshRequestDto: RefreshRequestDto): Promise<TokenResponseDto>;
     logout(dto: LogoutRequestDto): Promise<void>;
     me(user: JwtPayloadDto): UserInfoOauthDto;
+    checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto>;
+    requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<void>;
+    setPassword(dto: SetPasswordRequestDto): Promise<void>;
 }

@@ -63,8 +63,14 @@ let MailService = class MailService {
         });
         this.from = configService.getOrThrow('MAIL_FROM');
     }
-    async send(to, subject, html) {
-        await this.transporter.sendMail({ from: this.from, to, subject, html });
+    async send(to, subject, content) {
+        await this.transporter.sendMail({
+            from: this.from,
+            to,
+            subject,
+            ...(content.html ? { html: content.html } : {}),
+            ...(content.text ? { text: content.text } : {}),
+        });
     }
 };
 exports.MailService = MailService;

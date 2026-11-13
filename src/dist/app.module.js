@@ -25,6 +25,15 @@ const oauth_client_entity_js_1 = require("./oauth-client/entities/oauth-client.e
 const refresh_token_entity_js_1 = require("./refresh-token/entities/refresh-token.entity.js");
 const credential_token_entity_js_1 = require("./credential-token/entities/credential-token.entity.js");
 const credential_token_module_js_1 = require("./credential-token/credential-token.module.js");
+const domain_role_module_js_1 = require("./domain-role/domain-role.module.js");
+const specialty_module_js_1 = require("./specialty/specialty.module.js");
+const student_module_js_1 = require("./student/student.module.js");
+const password_reset_token_module_js_1 = require("./password-reset-token/password-reset-token.module.js");
+const domain_role_entity_js_1 = require("./domain-role/entities/domain-role.entity.js");
+const specialty_entity_js_1 = require("./specialty/entities/specialty.entity.js");
+const student_entity_js_1 = require("./student/entities/student.entity.js");
+const password_reset_token_entity_js_1 = require("./password-reset-token/entities/password-reset-token.entity.js");
+const mail_module_js_1 = require("./mail/mail.module.js");
 const admin_seeder_js_1 = require("./database/seeders/admin.seeder.js");
 let AppModule = class AppModule {
 };
@@ -53,6 +62,10 @@ exports.AppModule = AppModule = __decorate([
                         oauth_client_entity_js_1.OAuthClientEntity,
                         refresh_token_entity_js_1.RefreshTokenEntity,
                         credential_token_entity_js_1.CredentialTokenEntity,
+                        domain_role_entity_js_1.DomainRoleEntity,
+                        specialty_entity_js_1.SpecialtyEntity,
+                        student_entity_js_1.StudentEntity,
+                        password_reset_token_entity_js_1.PasswordResetTokenEntity,
                     ],
                     synchronize: false,
                     migrations: [(0, path_1.join)(__dirname, 'database', 'migrations', '*.js')],
@@ -73,6 +86,11 @@ exports.AppModule = AppModule = __decorate([
             oauth_client_module_js_1.OAuthClientModule,
             code_module_js_1.CodeModule,
             credential_token_module_js_1.CredentialTokenModule,
+            domain_role_module_js_1.DomainRoleModule,
+            specialty_module_js_1.SpecialtyModule,
+            student_module_js_1.StudentModule,
+            password_reset_token_module_js_1.PasswordResetTokenModule,
+            mail_module_js_1.MailModule,
         ],
         providers: [
             admin_seeder_js_1.AdminSeeder,

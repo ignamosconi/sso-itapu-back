@@ -129,13 +129,15 @@ export class AuthService implements IAuthService {
       void this.mailService.send(
         student.email,
         'Configurá tu contraseña — ITAPU',
-        `
-        <p>Hola <strong>${student.first_name}</strong>,</p>
-        <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
-        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-        <p>Hacé clic aquí (válido por 24 horas):</p>
-        <p><a href="${link}">${link}</a></p>
-        `,
+        { html:
+          `
+          <p>Hola <strong>${student.first_name}</strong>,</p>
+          <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
+          <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
+          <p>Hacé clic aquí (válido por 24 horas):</p>
+          <p><a href="${link}">${link}</a></p>
+          `,
+        }
       );
       return { status: 'no_password', maskedEmail: this.maskEmail(student.email) };
     }

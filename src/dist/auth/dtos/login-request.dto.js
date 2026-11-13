@@ -16,7 +16,7 @@ class LoginRequestDto {
     client_id;
     redirect_uri;
     state;
-    legajo;
+    username;
     password;
 }
 exports.LoginRequestDto = LoginRequestDto;
@@ -36,10 +36,10 @@ __decorate([
     __metadata("design:type", String)
 ], LoginRequestDto.prototype, "state", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '13692' }),
+    (0, swagger_1.ApiProperty)({ example: 'immosconi136', description: 'Nombre de usuario del alumno.' }),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
-], LoginRequestDto.prototype, "legajo", void 0);
+], LoginRequestDto.prototype, "username", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 'mi_contraseña_segura123!' }),
     (0, class_validator_1.IsString)(),

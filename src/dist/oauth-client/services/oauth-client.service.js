@@ -57,7 +57,6 @@ const typeorm_2 = require("typeorm");
 const crypto_1 = require("crypto");
 const config_1 = require("@nestjs/config");
 const bcrypt = __importStar(require("bcrypt"));
-const nodemailer = __importStar(require("nodemailer"));
 const generate_credential_token_dto_js_1 = require("../../credential-token/dtos/generate-credential-token.dto.js");
 const oauth_client_entity_js_1 = require("../entities/oauth-client.entity.js");
 const BCRYPT_ROUNDS = 10;
@@ -67,22 +66,14 @@ let OAuthClientService = class OAuthClientService {
     credentialTokenService;
     refreshTokenService;
     redis;
-    transporter;
-    constructor(clientRepository, configService, credentialTokenService, refreshTokenService, redis) {
+    mailService;
+    constructor(clientRepository, configService, credentialTokenService, refreshTokenService, redis, mailService) {
         this.clientRepository = clientRepository;
         this.configService = configService;
         this.credentialTokenService = credentialTokenService;
         this.refreshTokenService = refreshTokenService;
         this.redis = redis;
-        this.transporter = nodemailer.createTransport({
-            host: this.configService.getOrThrow('MAIL_HOST'),
-            port: this.configService.getOrThrow('MAIL_PORT'),
-            secure: false,
-            auth: {
-                user: this.configService.getOrThrow('MAIL_USER'),
-                pass: this.configService.getOrThrow('MAIL_PASS'),
-            },
-        });
+        this.mailService = mailService;
     }
     pendingSecretKey(clientId) {
         return `pending-secret:${clientId}`;
@@ -205,12 +196,9 @@ let OAuthClientService = class OAuthClientService {
         const credentialsUrl = `${ssoUrl}/credentials/${token}`;
         const urisList = client.redirectUris.map(uri => `  • ${uri}`).join('\n');
         try {
-            await this.transporter.sendMail({
-                from,
-                to,
-                subject: `Credenciales OAuth - ${client.clientName}`,
+            await this.mailService.send(to, `Credenciales OAuth - ${client.clientName}`, {
                 text: [
-                    `Credenciales de integración SSO FRVM para: ${client.clientName}`,
+                    `Credenciales de integración SSO ITAPU para: ${client.clientName}`,
                     '',
                     '── Tu link de credenciales ─────────────────────────────',
                     '',
@@ -229,7 +217,7 @@ let OAuthClientService = class OAuthClientService {
                     '── Cómo integrar tu app con el SSO ────────────────────',
                     '',
                     '1. Abrí un popup al login del SSO (puede ser con theme=light o theme=dark):',
-                    `   ${ssoUrl}/sso/login?client_id=${client.id}&redirect_uri=TU_REDIRECT_URI&state=VALOR_ALEATORIO&theme=dark `,
+                    `   ${ssoUrl}/sso/login?client_id=${client.id}&redirect_uri=TU_REDIRECT_URI&state=VALOR_ALEATORIO&theme=dark`,
                     '',
                     '2. Escuchá el postMessage en tu app:',
                     '   window.addEventListener("message", (event) => {',
@@ -262,23 +250,14 @@ let OAuthClientService = class OAuthClientService {
                     '6. Cerrar sesión del alumno voluntariamente:',
                     `   POST ${ssoUrl}/sso/logout`,
                     '   { "refresh_token": "TU_REFRESH_TOKEN" }',
-                    '   → Además de llamar a este endpoint, eliminá la sesión local de tu aplicación (por ejemplo, borrando la cookie HttpOnly).',
+                    '   → Además de llamar a este endpoint, eliminá la sesión local de tu aplicación.',
                     '',
                     '── Notas importantes ────────────────',
                     '• Nunca guardes el Client Secret en el frontend.',
-                    '• Guardá el access_token y refresh_token de forma segura en tu backend (se recomienda usar cookies HttpOnly para la sesión de tu frontend). No los expongas al cliente.',
+                    '• Guardá los tokens de forma segura en tu backend (cookies HttpOnly recomendadas).',
                     '• El code de autorización es de un solo uso y expira en 2 minutos.',
-                    '• El state lo generás aleatoriamente vos en el frontend. Verificá que el SSO devuelva el mismo valor exacto antes de procesar el code.',
-                    '• Si perdés el Client Secret, pedile al administrador del sistema que lo regenere.',
-                    '• Para más detalles consultá la documentación oficial: https://github.com/ignamosconi/sso-frvm/',
-                    '',
-                    '── Gestión de sesión ────────────────',
-                    '• La app debería cerrar la sesión automáticamente por cualquiera de estas razones:',
-                    '1. El alumno hace logout en tu app → Tu backend elimina la sesión local y llama a /sso/logout para revocar los tokens en el SSO.',
-                    '2. Inactividad: si el refresh_token no se usa por 24 horas [Ajustar según tu .env], expira.',
-                    '3. Duración absoluta: la sesión tiene un límite máximo de 3 días.',
-                    '4. Reutilización detectada: si un refresh_token ya usado se vuelve a intentar usar, toda la familia de tokens queda revocada instantáneamente por seguridad.',
-                    '',
+                    '• Verificá siempre que el state devuelto coincida con el que generaste.',
+                    '• Si perdés el Client Secret, pedile al administrador que lo regenere.',
                 ].join('\n'),
             });
         }
@@ -311,7 +290,8 @@ exports.OAuthClientService = OAuthClientService = __decorate([
     __param(2, (0, common_1.Inject)('ICredentialTokenService')),
     __param(3, (0, common_1.Inject)('IRefreshTokenService')),
     __param(4, (0, common_1.Inject)(redis_module_js_1.REDIS_CLIENT)),
+    __param(5, (0, common_1.Inject)('IMailService')),
     __metadata("design:paramtypes", [typeorm_2.Repository,
-        config_1.ConfigService, Object, Object, ioredis_1.default])
+        config_1.ConfigService, Object, Object, ioredis_1.default, Object])
 ], OAuthClientService);
 //# sourceMappingURL=oauth-client.service.js.map

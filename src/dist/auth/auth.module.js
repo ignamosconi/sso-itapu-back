@@ -8,7 +8,6 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthModule = void 0;
 const common_1 = require("@nestjs/common");
-const axios_1 = require("@nestjs/axios");
 const config_1 = require("@nestjs/config");
 const jwt_1 = require("@nestjs/jwt");
 const auth_controller_js_1 = require("./controllers/auth.controller.js");
@@ -18,25 +17,27 @@ const admin_jwt_guard_js_1 = require("./guards/admin-jwt.guard.js");
 const code_module_js_1 = require("../code/code.module.js");
 const oauth_client_module_js_1 = require("../oauth-client/oauth-client.module.js");
 const refresh_token_module_js_1 = require("../refresh-token/refresh-token.module.js");
+const student_module_js_1 = require("../student/student.module.js");
+const password_reset_token_module_js_1 = require("../password-reset-token/password-reset-token.module.js");
+const mail_module_js_1 = require("../mail/mail.module.js");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
 exports.AuthModule = AuthModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            axios_1.HttpModule,
             config_1.ConfigModule,
             jwt_1.JwtModule.register({}),
             code_module_js_1.CodeModule,
             oauth_client_module_js_1.OAuthClientModule,
             refresh_token_module_js_1.RefreshTokenModule,
+            student_module_js_1.StudentModule,
+            password_reset_token_module_js_1.PasswordResetTokenModule,
+            mail_module_js_1.MailModule,
         ],
         controllers: [auth_controller_js_1.AuthController],
         providers: [
-            {
-                provide: 'IAuthService',
-                useClass: auth_service_js_1.AuthService,
-            },
+            { provide: 'IAuthService', useClass: auth_service_js_1.AuthService },
             jwt_guard_js_1.JwtGuard,
             admin_jwt_guard_js_1.AdminJwtGuard,
         ],

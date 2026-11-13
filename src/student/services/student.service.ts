@@ -112,14 +112,16 @@ export class StudentService implements IStudentService {
     await this.mailService.send(
       student.email,
       'Bienvenido/a a ITAPU — Configurá tu contraseña',
-      `
-      <p>Hola <strong>${student.first_name}</strong>,</p>
-      <p>Tu cuenta fue creada en el sistema de ITAPU.</p>
-      <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-      <p>Para configurar tu contraseña hacé clic aquí (el link expira en 24 horas):</p>
-      <p><a href="${link}">${link}</a></p>
-      <p>Si no esperabas este correo, ignoralo.</p>
-      `,
+      { html:
+        `
+        <p>Hola <strong>${student.first_name}</strong>,</p>
+        <p>Tu cuenta fue creada en el sistema de ITAPU.</p>
+        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
+        <p>Para configurar tu contraseña hacé clic aquí (el link expira en 24 horas):</p>
+        <p><a href="${link}">${link}</a></p>
+        <p>Si no esperabas este correo, ignoralo.</p>
+        `,
+      },
     );
   }
 
@@ -129,14 +131,16 @@ export class StudentService implements IStudentService {
     await this.mailService.send(
       student.email,
       'Restaurar contraseña — ITAPU',
-      `
-      <p>Hola <strong>${student.first_name}</strong>,</p>
-      <p>Recibimos una solicitud para restaurar tu contraseña.</p>
-      <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-      <p>Hacé clic aquí para elegir una nueva contraseña (válido por 24 horas):</p>
-      <p><a href="${link}">${link}</a></p>
-      <p>Si no fuiste vos, ignorá este correo.</p>
-      `,
+      { html:
+        `
+        <p>Hola <strong>${student.first_name}</strong>,</p>
+        <p>Recibimos una solicitud para restaurar tu contraseña.</p>
+        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
+        <p>Hacé clic aquí para elegir una nueva contraseña (válido por 24 horas):</p>
+        <p><a href="${link}">${link}</a></p>
+        <p>Si no fuiste vos, ignorá este correo.</p>
+        `,
+      }
     );
   }
 

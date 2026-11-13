@@ -14,6 +14,7 @@
     "sourceMap": true,
     "rootDir": "./src",
     "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo",
     "paths": {
       "src/*": ["./src/*"]
     },

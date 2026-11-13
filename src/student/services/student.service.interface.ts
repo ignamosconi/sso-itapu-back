@@ -19,6 +19,9 @@ export interface IStudentService {
   confirmImport(dto: ImportConfirmDto): Promise<ImportConfirmResultDto>;
   generateExampleCsv(): string;
 
+  // Email
+  sendPasswordResetEmail(student: StudentCredentialsDto): Promise<void>;
+
   // Uso interno — auth
   findForAuth(username: string): Promise<StudentCredentialsDto | null>;
   setPassword(studentId: string, hashedPassword: string): Promise<void>;

@@ -8,6 +8,7 @@ import { StudentService } from './services/student.service.js';
 import { StudentController } from './controllers/student.controller.js';
 import { PasswordResetTokenModule } from '../password-reset-token/password-reset-token.module.js';
 import { MailModule } from '../mail/mail.module.js';
+import { JwtModule } from '@nestjs/jwt';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { MailModule } from '../mail/mail.module.js';
     ConfigModule,
     PasswordResetTokenModule,
     MailModule,
+    JwtModule.register({}),
   ],
   controllers: [StudentController],
   providers: [{ provide: 'IStudentService', useClass: StudentService }],

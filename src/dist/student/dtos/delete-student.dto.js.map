@@ -1,1 +1,0 @@
-{"version":3,"file":"delete-student.dto.js","sourceRoot":"","sources":["../../../student/dtos/delete-student.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,qDAAuD;AACvD,6CAAsD;AAEtD,MAAa,gBAAgB;IAQ3B,QAAQ,CAAU;CACnB;AATD,4CASC;AADC;IAPC,IAAA,6BAAmB,EAAC;QACnB,WAAW,EACT,iFAAiF;YACjF,+FAA+F;KAClG,CAAC;IACD,IAAA,4BAAU,GAAE;IACZ,IAAA,0BAAQ,GAAE;;kDACO"}

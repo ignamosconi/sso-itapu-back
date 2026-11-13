@@ -1,4 +1,5 @@
 import type { Multer } from 'multer';
+import type { Response } from 'express';
 import { CreateStudentDto } from '../dtos/create-student.dto.js';
 import { UpdateStudentDto } from '../dtos/update-student.dto.js';
 import { DeleteStudentDto } from '../dtos/delete-student.dto.js';

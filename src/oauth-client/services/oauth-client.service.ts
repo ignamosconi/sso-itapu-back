@@ -198,69 +198,105 @@ export class OAuthClientService implements IOAuthClientService {
     const urisList = client.redirectUris.map(uri => `  • ${uri}`).join('\n');
 
     try {
-      await this.mailService.send(to, `Credenciales OAuth - ${client.clientName}`, {
-        text: [
-          `Credenciales de integración SSO ITAPU para: ${client.clientName}`,
-          '',
-          '── Tu link de credenciales ─────────────────────────────',
-          '',
-          `${credentialsUrl}`,
-          '',
-          `⚠️  Este link es de UN SOLO USO y expira en ${credentialTokenTtlText}.`,
-          'Abrilo, guardá el Client Secret en un lugar seguro y no lo compartas.',
-          '',
-          '── Datos conocidos de tu cliente OAuth ─────────────────',
-          `Client ID:   ${client.id}`,
-          `Client Name: ${client.clientName}`,
-          '',
-          'Redirect URIs registradas:',
-          urisList,
-          '',
-          '── Cómo integrar tu app con el SSO ────────────────────',
-          '',
-          '1. Abrí un popup al login del SSO (puede ser con theme=light o theme=dark):',
-          `   ${ssoUrl}/sso/login?client_id=${client.id}&redirect_uri=TU_REDIRECT_URI&state=VALOR_ALEATORIO&theme=dark`,
-          '',
-          '2. Escuchá el postMessage en tu app:',
-          '   window.addEventListener("message", (event) => {',
-          `     if (event.origin !== "${ssoUrl}") return;`,
-          '     const { code, state } = event.data;',
-          '     // Verificá que state coincida con el que generaste',
-          '     // Mandá el code a tu backend',
-          '   });',
-          '',
-          '3. Desde tu backend, canjeá el code por tokens:',
-          `   POST ${ssoUrl}/sso/token`,
-          '   {',
-          `     "client_id": "${client.id}",`,
-          '     "client_secret": "TU_CLIENT_SECRET",',
-          '     "code": "EL_CODE_RECIBIDO",',
-          '     "redirect_uri": "TU_REDIRECT_URI"',
-          '   }',
-          '',
-          '4. Usá el access_token para identificar al usuario:',
-          `   GET ${ssoUrl}/sso/me`,
-          '   Authorization: Bearer ACCESS_TOKEN',
-          '',
-          '5. Renovar el access_token cuando expire (cada 15 minutos):',
-          `   POST ${ssoUrl}/sso/refresh`,
-          '   { "refresh_token": "TU_REFRESH_TOKEN" }',
-          '   → Obtenés un nuevo access_token Y un nuevo refresh_token.',
-          '   → IMPORTANTE: reemplazá AMBOS tokens almacenados con los nuevos.',
-          '   → El refresh_token anterior queda inválido tras el canje.',
-          '',
-          '6. Cerrar sesión del alumno voluntariamente:',
-          `   POST ${ssoUrl}/sso/logout`,
-          '   { "refresh_token": "TU_REFRESH_TOKEN" }',
-          '   → Además de llamar a este endpoint, eliminá la sesión local de tu aplicación.',
-          '',
-          '── Notas importantes ────────────────',
-          '• Nunca guardes el Client Secret en el frontend.',
-          '• Guardá los tokens de forma segura en tu backend (cookies HttpOnly recomendadas).',
-          '• El code de autorización es de un solo uso y expira en 2 minutos.',
-          '• Verificá siempre que el state devuelto coincida con el que generaste.',
-          '• Si perdés el Client Secret, pedile al administrador que lo regenere.',
-        ].join('\n'),
+      await this.mailService.send(to, `Credenciales OAuth — ${client.clientName}`, {
+        html: `
+          <!DOCTYPE html>
+          <html lang="es">
+          <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="margin:0;padding:0;background:#0f0f1a;font-family:'Segoe UI',Arial,sans-serif">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f1a;padding:40px 0">
+              <tr><td align="center">
+                <table width="560" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden">
+
+                  <!-- Header -->
+                  <tr><td style="background:#f5a705;padding:20px 32px">
+                    <p style="margin:0;font-size:18px;font-weight:700;color:#1a1200">SSO ITAPU</p>
+                    <p style="margin:4px 0 0;font-size:13px;color:#1a1200;opacity:0.75">Sistema de autenticación único</p>
+                  </td></tr>
+
+                  <!-- Body -->
+                  <tr><td style="padding:32px">
+                    <p style="margin:0 0 8px;font-size:16px;font-weight:600;color:#ffffff">Credenciales de integración</p>
+                    <p style="margin:0 0 24px;font-size:13px;color:rgba(255,255,255,0.6)">
+                      Recibiste las credenciales para integrar <strong style="color:#f5a705">${client.clientName}</strong> con el SSO de ITAPU.
+                    </p>
+
+                    <!-- Link de un solo uso -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(245,167,5,0.08);border:1px solid rgba(245,167,5,0.3);border-radius:8px;margin-bottom:24px">
+                      <tr><td style="padding:16px 20px">
+                        <p style="margin:0 0 6px;font-size:11px;font-weight:600;color:#f5a705;letter-spacing:0.08em;text-transform:uppercase">Tu link de credenciales</p>
+                        <a href="${credentialsUrl}" style="color:#f5a705;font-size:13px;word-break:break-all">${credentialsUrl}</a>
+                        <p style="margin:10px 0 0;font-size:12px;color:rgba(255,255,255,0.5)">
+                          ⚠️ Un solo uso · Expira en ${credentialTokenTtlText} · Guardá el Client Secret en un lugar seguro
+                        </p>
+                      </td></tr>
+                    </table>
+
+                    <!-- Datos del cliente -->
+                    <p style="margin:0 0 10px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:0.08em;text-transform:uppercase">Datos de tu cliente OAuth</p>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+                      <tr>
+                        <td style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:4px 4px 0 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;color:rgba(255,255,255,0.4);width:40%">Client ID</td>
+                        <td style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:4px 4px 0 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;color:#ffffff;font-weight:600">${client.id}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 12px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;color:rgba(255,255,255,0.4)">Nombre</td>
+                        <td style="padding:8px 12px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;color:#ffffff">${client.clientName}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:0 0 4px 4px;font-size:12px;color:rgba(255,255,255,0.4);vertical-align:top">Redirect URIs</td>
+                        <td style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:0 0 4px 4px;font-size:12px;color:#ffffff">${client.redirectUris.map(u => `<span style="display:block">${u}</span>`).join('')}</td>
+                      </tr>
+                    </table>
+
+                    <!-- Pasos de integración -->
+                    <p style="margin:0 0 10px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:0.08em;text-transform:uppercase">Integración rápida</p>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+                      ${[
+                        ['1. Abrir popup de login', `<code style="font-size:11px;color:#f5a705;word-break:break-all">${ssoUrl}/sso/login?client_id=${client.id}&amp;redirect_uri=TU_URI&amp;state=ALEATORIO&amp;theme=dark</code>`],
+                        ['2. Escuchar postMessage', `Verificá <code style="color:#f5a705">event.origin === "${ssoUrl}"</code> y el <code style="color:#f5a705">state</code> antes de procesar.`],
+                        ['3. Canjear code por tokens', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/token</code> — desde tu <strong>backend</strong> con client_secret.`],
+                        ['4. Obtener datos del usuario', `<code style="font-size:11px;color:#f5a705">GET ${ssoUrl}/sso/me</code> con <code style="color:#f5a705">Authorization: Bearer ACCESS_TOKEN</code>.`],
+                        ['5. Renovar tokens', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/refresh</code> — reemplazá ambos tokens con la respuesta.`],
+                        ['6. Cerrar sesión', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/logout</code> con el refresh_token.`],
+                      ].map(([title, body]) => `
+                        <tr><td style="padding:0 0 8px">
+                          <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border-radius:6px">
+                            <tr><td style="padding:12px 16px">
+                              <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#ffffff">${title}</p>
+                              <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5">${body}</p>
+                            </td></tr>
+                          </table>
+                        </td></tr>
+                      `).join('')}
+                    </table>
+
+                    <!-- Notas de seguridad -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px">
+                      <tr><td style="padding:14px 18px">
+                        <p style="margin:0 0 6px;font-size:11px;font-weight:600;color:#fc9797;letter-spacing:0.06em;text-transform:uppercase">Seguridad</p>
+                        <ul style="margin:0;padding-left:16px;font-size:12px;color:rgba(255,255,255,0.55);line-height:1.8">
+                          <li>Nunca expongas el Client Secret en el frontend.</li>
+                          <li>Guardá los tokens en cookies <code style="color:#f5a705">HttpOnly</code>, nunca en localStorage.</li>
+                          <li>El authorization code es de un solo uso y expira en 2 minutos.</li>
+                          <li>Si perdés el Client Secret, pedí al administrador que lo regenere.</li>
+                        </ul>
+                      </td></tr>
+                    </table>
+                  </td></tr>
+
+                  <!-- Footer -->
+                  <tr><td style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.06)">
+                    <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.25);text-align:center">
+                      SSO ITAPU · Este correo fue generado automáticamente, no respondas a esta dirección.
+                    </p>
+                  </td></tr>
+
+                </table>
+              </td></tr>
+            </table>
+          </body>
+          </html>`,
       });
     } catch {
       throw new BadRequestException('Error al enviar el correo. Verificá la configuración de email.');

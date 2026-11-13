@@ -18,6 +18,6 @@ export interface IStudentController {
   activate(id: string): Promise<StudentResponseDto>;
   importPreview(file: Express.Multer.File): Promise<ImportPreviewResultDto>;
   importConfirm(dto: ImportConfirmDto): Promise<ImportConfirmResultDto>;
-  downloadExample(res: Response): void;
+  downloadExample(res: import('express').Response): void;
   resendWelcome(id: string): Promise<void>;
 }

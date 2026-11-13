@@ -20,6 +20,7 @@ import { ImportPreviewResultDto, ImportPreviewRowDto } from '../dtos/import-prev
 import { ImportConfirmDto, ImportConfirmResultDto, ImportStudentRowDto } from '../dtos/import-confirm.dto.js';
 import { StudentCredentialsDto } from '../dtos/student-credentials.dto.js';
 import { ConfigService } from '@nestjs/config';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class StudentService implements IStudentService {
@@ -274,22 +275,35 @@ export class StudentService implements IStudentService {
     return this.toDto(await this.repo.save(entity));
   }
 
-  // ── Import CSV ───────────────────────────────────────────────────────────
+  // ── Import Excel ───────────────────────────────────────────────────────────
+  generateExampleXlsx(): Buffer {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['first_name', 'last_name', 'dni', 'email', 'birth_date', 'domain_role', 'specialty'],
+      ['Ignacio Mariano', 'Mosconi', 44244136, 'alumno@gmail.com', '2003-05-15', 'Alumno', 'Sistemas'],
+      ['María Elena', 'García López', 33456789, 'otro@ejemplo.com', '1998-11-22', 'Docente', 'Mecánica'],
+    ]);
 
-  generateExampleCsv(): string {
-    return [
-      'first_name,last_name,dni,email,birth_date,domain_role,specialty',
-      'Ignacio Mariano,Mosconi,44244136,alumno@gmail.com,2003-05-15,Alumno,Sistemas',
-      'María Elena,García López,33456789,otro@ejemplo.com,1998-11-22,Docente,Mecánica',
-    ].join('\n');
+    // Ancho de columnas para que sea legible al abrir
+    ws['!cols'] = [
+      { wch: 20 }, { wch: 20 }, { wch: 12 }, { wch: 28 },
+      { wch: 14 }, { wch: 20 }, { wch: 20 },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Usuarios');
+    return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
   }
 
-  async parseImportPreview(csvBuffer: Buffer): Promise<ImportPreviewResultDto> {
-    const lines = csvBuffer.toString('utf-8').split('\n').filter(l => l.trim());
-    if (lines.length < 2) throw new BadRequestException('El archivo está vacío o solo tiene encabezados.');
+  async parseImportPreview(xlsxBuffer: Buffer): Promise<ImportPreviewResultDto> {
+    const wb = XLSX.read(xlsxBuffer, { type: 'buffer', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    if (!ws) throw new BadRequestException('El archivo no contiene hojas de cálculo.');
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+    if (rows.length === 0) throw new BadRequestException('El archivo está vacío o solo tiene encabezados.');
+
     const required = ['first_name', 'last_name', 'dni', 'email', 'birth_date', 'domain_role', 'specialty'];
+    const headers = Object.keys(rows[0]);
     const missing = required.filter(r => !headers.includes(r));
     if (missing.length > 0) {
       throw new BadRequestException(`Faltan columnas requeridas: ${missing.join(', ')}.`);
@@ -300,46 +314,55 @@ export class StudentService implements IStudentService {
     const specs = await this.specialtyRepo.find();
     const specMap = new Map(specs.map(s => [s.name.toLowerCase(), s]));
 
-    const rows: ImportPreviewRowDto[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cells = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => { row[h] = cells[idx] ?? ''; });
+    const result: ImportPreviewRowDto[] = [];
 
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
       const errors: string[] = [];
       const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ ]+$/;
 
-      if (!nameRegex.test(row.first_name)) errors.push('first_name: solo letras y espacios.');
-      if (!nameRegex.test(row.last_name)) errors.push('last_name: solo letras y espacios.');
-      if (!/^\d{7,}$/.test(row.dni)) errors.push('dni: debe ser un número de al menos 7 dígitos.');
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) errors.push('email: formato inválido.');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(row.birth_date)) errors.push('birth_date: formato debe ser YYYY-MM-DD.');
-      if (!roleMap.has(row.domain_role.toLowerCase())) errors.push(`domain_role: "${row.domain_role}" no existe.`);
-      if (!specMap.has(row.specialty.toLowerCase())) errors.push(`specialty: "${row.specialty}" no existe.`);
+      const firstName = String(row['first_name'] ?? '').trim();
+      const lastName = String(row['last_name'] ?? '').trim();
+      const dniRaw = row['dni'];
+      const email = String(row['email'] ?? '').trim();
+      const domainRole = String(row['domain_role'] ?? '').trim();
+      const specialty = String(row['specialty'] ?? '').trim();
 
-      const role = roleMap.get(row.domain_role.toLowerCase());
-      const spec = specMap.get(row.specialty.toLowerCase());
+      // birth_date: SheetJS puede devolver un Date si cellDates:true
+      let birthDate = '';
+      if (row['birth_date'] instanceof Date) {
+        const d = row['birth_date'] as Date;
+        birthDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      } else {
+        birthDate = String(row['birth_date'] ?? '').trim();
+      }
 
-      rows.push({
-        rowNumber: i,
+      if (!nameRegex.test(firstName)) errors.push('first_name: solo letras y espacios.');
+      if (!nameRegex.test(lastName)) errors.push('last_name: solo letras y espacios.');
+
+      const dni = typeof dniRaw === 'number' ? dniRaw : parseInt(String(dniRaw), 10);
+      if (isNaN(dni) || dni < 1000000) errors.push('dni: debe ser un número de al menos 7 dígitos.');
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('email: formato inválido.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) errors.push('birth_date: formato debe ser YYYY-MM-DD.');
+      if (!roleMap.has(domainRole.toLowerCase())) errors.push(`domain_role: "${domainRole}" no existe.`);
+      if (!specMap.has(specialty.toLowerCase())) errors.push(`specialty: "${specialty}" no existe.`);
+
+      const role = roleMap.get(domainRole.toLowerCase());
+      const spec = specMap.get(specialty.toLowerCase());
+
+      result.push({
+        rowNumber: i + 1,
         valid: errors.length === 0,
         errors: errors.length > 0 ? errors : undefined,
         data: errors.length === 0
-          ? {
-              first_name: row.first_name,
-              last_name: row.last_name,
-              dni: parseInt(row.dni, 10),
-              email: row.email,
-              birth_date: row.birth_date,
-              domainRoleId: role!.id,
-              specialtyId: spec!.id,
-            }
-          : row,
+          ? { first_name: firstName, last_name: lastName, dni, email, birth_date: birthDate, domainRoleId: role!.id, specialtyId: spec!.id }
+          : { first_name: firstName, last_name: lastName, dni: dniRaw, email, birth_date: birthDate, domain_role: domainRole, specialty },
       });
     }
 
-    const valid = rows.filter(r => r.valid).length;
-    return { total: rows.length, valid, invalid: rows.length - valid, rows };
+    const valid = result.filter(r => r.valid).length;
+    return { total: result.length, valid, invalid: result.length - valid, rows: result };
   }
 
   async confirmImport(dto: ImportConfirmDto): Promise<ImportConfirmResultDto> {

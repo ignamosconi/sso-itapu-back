@@ -26,6 +26,7 @@ import { SpecialtyEntity } from './specialty/entities/specialty.entity.js';
 import { StudentEntity } from './student/entities/student.entity.js';
 import { PasswordResetTokenEntity } from './password-reset-token/entities/password-reset-token.entity.js';
 import { MailModule } from './mail/mail.module.js';
+import { SsoInfoModule } from './sso-info/sso-info.module.js';
 import { AdminSeeder } from './database/seeders/admin.seeder.js';
 
 @Module({
@@ -80,6 +81,7 @@ import { AdminSeeder } from './database/seeders/admin.seeder.js';
     StudentModule,
     PasswordResetTokenModule,
     MailModule,
+    SsoInfoModule,
   ],
   providers: [    
     AdminSeeder,

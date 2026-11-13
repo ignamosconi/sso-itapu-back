@@ -1,0 +1,37 @@
+import Redis from 'ioredis';
+import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
+import { IOAuthClientService } from './oauth-client.service.interface.js';
+import type { ICredentialTokenService } from '../../credential-token/services/credential-token.service.interface.js';
+import { OAuthClientEntity } from '../entities/oauth-client.entity.js';
+import { CreateOAuthClientDto } from '../dtos/create-oauth-client.dto.js';
+import { UpdateOAuthClientDto } from '../dtos/update-oauth-client.dto.js';
+import { OAuthClientResponseDto } from '../dtos/oauth-client-response.dto.js';
+import { OAuthClientCreatedResponseDto } from '../dtos/oauth-client-created-response.dto.js';
+import { OAuthClientInfoDto } from '../dtos/oauth-client-info.dto.js';
+import type { IRefreshTokenService } from 'src/refresh-token/services/refresh-token.service.interface.js';
+export declare class OAuthClientService implements IOAuthClientService {
+    private readonly clientRepository;
+    private readonly configService;
+    private readonly credentialTokenService;
+    private readonly refreshTokenService;
+    private readonly redis;
+    private readonly transporter;
+    constructor(clientRepository: Repository<OAuthClientEntity>, configService: ConfigService, credentialTokenService: ICredentialTokenService, refreshTokenService: IRefreshTokenService, redis: Redis);
+    private pendingSecretKey;
+    private storePendingSecret;
+    private consumePendingSecret;
+    private toResponseDto;
+    private toCreatedResponseDto;
+    findAll(): Promise<OAuthClientResponseDto[]>;
+    findOne(id: number): Promise<OAuthClientResponseDto>;
+    findInfo(id: number): Promise<OAuthClientInfoDto>;
+    validateClient(id: number, secret: string, redirectUri: string): Promise<boolean>;
+    create(dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto>;
+    update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto>;
+    remove(id: number): Promise<void>;
+    regenerateSecret(id: number): Promise<OAuthClientCreatedResponseDto>;
+    sendCredentialsByEmail(id: number, to: string): Promise<void>;
+    suspend(id: number): Promise<OAuthClientResponseDto>;
+    activate(id: number): Promise<OAuthClientResponseDto>;
+}

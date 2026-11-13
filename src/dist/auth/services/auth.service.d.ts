@@ -1,0 +1,37 @@
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { IAuthService } from './auth.service.interface.js';
+import type { ICodeService } from '../../code/services/code.service.interface.js';
+import type { IOAuthClientService } from '../../oauth-client/services/oauth-client.service.interface.js';
+import type { IRefreshTokenService } from '../../refresh-token/services/refresh-token.service.interface.js';
+import { LoginRequestDto } from '../dtos/login-request.dto.js';
+import { AuthorizationCodeRequestDto } from '../dtos/authorization-code-request.dto.js';
+import { RefreshRequestDto } from '../dtos/refresh-request.dto.js';
+import { LogoutRequestDto } from '../dtos/logout-request.dto.js';
+import { CodeResponseDto } from '../dtos/code-response.dto.js';
+import { TokenResponseDto } from '../dtos/token-response.dto.js';
+import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
+import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
+export declare class AuthService implements IAuthService {
+    private readonly httpService;
+    private readonly configService;
+    private readonly jwtService;
+    private readonly codeService;
+    private readonly oauthClientService;
+    private readonly refreshTokenService;
+    private readonly baseUrl;
+    private readonly accessSecret;
+    private readonly refreshSecret;
+    private readonly accessExpiresIn;
+    private readonly refreshExpiresIn;
+    private readonly sessionMaxDurationMs;
+    constructor(httpService: HttpService, configService: ConfigService, jwtService: JwtService, codeService: ICodeService, oauthClientService: IOAuthClientService, refreshTokenService: IRefreshTokenService);
+    validateAndGetUserInfo(loginDto: LoginRequestDto): Promise<UserInfoOauthDto>;
+    issueCode(loginDto: LoginRequestDto): Promise<CodeResponseDto>;
+    exchangeCodeForTokens(dto: AuthorizationCodeRequestDto): Promise<TokenResponseDto>;
+    refreshTokens(refreshRequestDto: RefreshRequestDto): Promise<TokenResponseDto>;
+    logout(dto: LogoutRequestDto): Promise<void>;
+    private parseExpiresIn;
+    getCleanUserInfo(payload: JwtPayloadDto): UserInfoOauthDto;
+}

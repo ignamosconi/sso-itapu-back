@@ -3,6 +3,7 @@ dotenv.config();
 
 import type { Request, Response } from 'express';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -50,7 +51,8 @@ function assertSecrets(configService: ConfigService): void {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.set('trust proxy', 1);
 
   app.use(helmet({
     //Evita que el popup de login y la página de credenciales sean embebidos en iframes de otros orígenes (clickjacking)
@@ -106,8 +108,8 @@ async function bootstrap() {
   );
 
   const config = new DocumentBuilder()
-    .setTitle('SSO FRVM')
-    .setDescription('Servidor OAuth 2.0 para autenticación de alumnos de UTN FRVM.')
+    .setTitle('SSO ITAPU')
+    .setDescription('Servidor OAuth 2.0 para autenticación de usuarios de ITAPU.')
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -130,39 +132,9 @@ async function bootstrap() {
   await seeder.seed();
 
   //endpoint /health para chequear si el SSO está activo.
-  const httpAdapter = app.getHttpAdapter();
-  httpAdapter.get('/health', (_req: Request, res: Response) => {
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.get('/health', (_req: Request, res: Response) => {
     res.status(200).json({ status: 'ok' });
-  });
-
-  //endpoint /health/autogestión para chequear si autogestión está activa
-  httpAdapter.get('/health/autogestion', async (_req: Request, res: Response) => {
-    try {
-      const { default: axios } = await import('axios');
-      // Replicamos exactamente la llamada que hace auth.service.ts al login de Autogestión.
-      // Mandamos credenciales vacías — Autogestión va a responder con un error HTTP
-      // (401 o similar), pero eso confirma que el servidor está vivo y respondiendo.
-      // Solo un error de red (timeout, ECONNREFUSED) significa que está caído.
-      await axios.post(
-        `${process.env.AUTOGESTION_BASE_URL}/login`,
-        {},
-        {
-          headers: { nick: '', password: '' },
-          timeout: 5000,
-        }
-      );
-      // Si por alguna razón devuelve 200 con credenciales vacías, igual está vivo
-      res.status(200).json({ status: 'ok' });
-    } catch (err) {
-      const axiosErr = err as { response?: { status?: number } };
-      if (axiosErr?.response) {
-        // Cualquier respuesta HTTP (401, 400, 403, 500...) = servidor vivo
-        res.status(200).json({ status: 'ok' });
-      } else {
-        // Sin respuesta = error de red = servidor caído
-        res.status(503).json({ status: 'down' });
-      }
-    }
   });
 
   await app.listen(port);

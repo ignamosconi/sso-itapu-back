@@ -25,4 +25,5 @@ export interface IStudentService {
   // Uso interno — auth
   findForAuth(username: string): Promise<StudentCredentialsDto | null>;
   setPassword(studentId: string, hashedPassword: string): Promise<void>;
+  resendWelcome(id: string): Promise<void>;
 }

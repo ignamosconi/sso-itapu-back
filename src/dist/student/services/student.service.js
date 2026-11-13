@@ -398,6 +398,15 @@ let StudentService = class StudentService {
             specialtyName: entity.specialty.name,
         };
     }
+    async resendWelcome(id) {
+        const entity = await this.repo.findOne({ where: { id } });
+        if (!entity)
+            throw new common_1.NotFoundException(`Alumno con id ${id} no encontrado.`);
+        if (entity.account_status !== student_entity_js_1.AccountStatus.PendingRegistration) {
+            throw new common_1.BadRequestException('Solo se puede reenviar el email de bienvenida a cuentas con registro pendiente.');
+        }
+        await this.sendWelcomeEmail(entity);
+    }
     async setPassword(studentId, hashedPassword) {
         const entity = await this.repo.findOne({ where: { id: studentId } });
         if (!entity)

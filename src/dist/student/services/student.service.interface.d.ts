@@ -23,4 +23,5 @@ export interface IStudentService {
     sendPasswordResetEmail(student: StudentCredentialsDto): Promise<void>;
     findForAuth(username: string): Promise<StudentCredentialsDto | null>;
     setPassword(studentId: string, hashedPassword: string): Promise<void>;
+    resendWelcome(id: string): Promise<void>;
 }

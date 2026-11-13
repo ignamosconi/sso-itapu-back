@@ -1,7 +1,7 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Inject,
   UseGuards, ParseUUIDPipe, Query, UseInterceptors, UploadedFile,
-  BadRequestException, Res,
+  BadRequestException, Res, HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -19,7 +19,7 @@ import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
-import type { Multer } from 'multer'; 
+import type { Multer } from 'multer';   //Si no está esta línea, se rompe el multer abajo.
 
 @ApiTags('Admin — Padrón de usuarios')
 @ApiBearerAuth('admin-jwt')
@@ -94,6 +94,21 @@ export class StudentController implements IStudentController {
   @Patch(':id/activate')
   activate(@Param('id', ParseUUIDPipe) id: string): Promise<StudentResponseDto> {
     return this.service.activate(id);
+  }
+
+  @ApiOperation({
+    summary: 'Reenviar email de bienvenida',
+    description:
+      'Solo disponible para cuentas en estado pending_registration. ' +
+      'Genera un nuevo token de setup y reenvía el email con el link de configuración de contraseña.',
+  })
+  @ApiResponse({ status: 204, description: 'Email reenviado' })
+  @ApiResponse({ status: 400, description: 'La cuenta no está en estado pending_registration' })
+  @ApiResponse({ status: 404, description: 'Alumno no encontrado' })
+  @HttpCode(204)
+  @Post(':id/resend-welcome')
+  resendWelcome(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.service.resendWelcome(id);
   }
 
   @ApiOperation({ summary: 'Descargar CSV de ejemplo para carga masiva' })

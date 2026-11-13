@@ -406,6 +406,17 @@ export class StudentService implements IStudentService {
     };
   }
 
+  async resendWelcome(id: string): Promise<void> {
+    const entity = await this.repo.findOne({ where: { id } });
+    if (!entity) throw new NotFoundException(`Alumno con id ${id} no encontrado.`);
+    if (entity.account_status !== AccountStatus.PendingRegistration) {
+      throw new BadRequestException(
+        'Solo se puede reenviar el email de bienvenida a cuentas con registro pendiente.',
+      );
+    }
+    await this.sendWelcomeEmail(entity);
+  }
+
   async setPassword(studentId: string, hashedPassword: string): Promise<void> {
     const entity = await this.repo.findOne({ where: { id: studentId } });
     if (!entity) throw new NotFoundException(`Alumno con id ${studentId} no encontrado.`);

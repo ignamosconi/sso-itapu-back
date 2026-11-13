@@ -19,4 +19,5 @@ export interface IStudentController {
     importPreview(file: Express.Multer.File): Promise<ImportPreviewResultDto>;
     importConfirm(dto: ImportConfirmDto): Promise<ImportConfirmResultDto>;
     downloadExample(res: Response): void;
+    resendWelcome(id: string): Promise<void>;
 }

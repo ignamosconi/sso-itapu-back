@@ -21,6 +21,7 @@ export declare class StudentController implements IStudentController {
     remove(id: string, dto: DeleteStudentDto): Promise<void>;
     suspend(id: string): Promise<StudentResponseDto>;
     activate(id: string): Promise<StudentResponseDto>;
+    resendWelcome(id: string): Promise<void>;
     downloadExample(res: Response): void;
     importPreview(file: Express.Multer.File): Promise<ImportPreviewResultDto>;
     importConfirm(dto: ImportConfirmDto): Promise<ImportConfirmResultDto>;

@@ -50,6 +50,9 @@ let StudentController = class StudentController {
     activate(id) {
         return this.service.activate(id);
     }
+    resendWelcome(id) {
+        return this.service.resendWelcome(id);
+    }
     downloadExample(res) {
         const csv = this.service.generateExampleCsv();
         res.setHeader('Content-Type', 'text/csv');
@@ -140,6 +143,22 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], StudentController.prototype, "activate", null);
+__decorate([
+    (0, swagger_1.ApiOperation)({
+        summary: 'Reenviar email de bienvenida',
+        description: 'Solo disponible para cuentas en estado pending_registration. ' +
+            'Genera un nuevo token de setup y reenvía el email con el link de configuración de contraseña.',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 204, description: 'Email reenviado' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'La cuenta no está en estado pending_registration' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Alumno no encontrado' }),
+    (0, common_1.HttpCode)(204),
+    (0, common_1.Post)(':id/resend-welcome'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], StudentController.prototype, "resendWelcome", null);
 __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Descargar CSV de ejemplo para carga masiva' }),
     (0, common_1.Get)('import/example'),

@@ -45,5 +45,6 @@ export declare class StudentService implements IStudentService {
     parseImportPreview(csvBuffer: Buffer): Promise<ImportPreviewResultDto>;
     confirmImport(dto: ImportConfirmDto): Promise<ImportConfirmResultDto>;
     findForAuth(username: string): Promise<StudentCredentialsDto | null>;
+    resendWelcome(id: string): Promise<void>;
     setPassword(studentId: string, hashedPassword: string): Promise<void>;
 }

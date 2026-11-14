@@ -1,8 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UserInfoOauthDto {
-
-  @ApiProperty({ example: '131601' })
+  @ApiProperty({ example: 'uuid-del-usuario', description: 'Identificador único del usuario. No cambia nunca.' })
   readonly sub!: string;
 
   @ApiProperty({ example: 'Ignacio Mariano' })
@@ -11,15 +10,15 @@ export class UserInfoOauthDto {
   @ApiProperty({ example: 'Mosconi' })
   readonly apellido!: string;
 
-  @ApiProperty({ example: '13692' })
-  readonly legajo!: string;
+  @ApiProperty({ example: 'immosconi136', description: 'Nombre de usuario del SSO.' })
+  readonly username!: string;
 
-  @ApiProperty({ example: 'Ingeniería en Sistemas de Información' })
-  readonly carrera!: string;
+  @ApiProperty({ example: 'Mecánica', description: 'Especialidad del usuario. Ver GET /sso/info/specialties para valores posibles.' })
+  readonly especialidad!: string;
 
   @ApiProperty({ example: 'alumno@gmail.com' })
   readonly email!: string;
 
-  @ApiProperty({ example: 'Alumno' })
-  readonly grupo!: string;
+  @ApiProperty({ example: 'Alumno', description: 'Cargo institucional del usuario. Ver GET /sso/info/domain-roles para valores posibles.' })
+  readonly cargo!: string;
 }

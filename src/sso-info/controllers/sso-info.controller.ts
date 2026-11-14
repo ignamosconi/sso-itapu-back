@@ -34,7 +34,7 @@ export class SsoInfoController implements ISsoInfoController {
       'Devuelve los valores posibles del campo `carrera` en la respuesta de `/sso/me`. ' +
       'Endpoint público — no requiere autenticación.',
   })
-  @ApiResponse({ status: 200, schema: { example: ['Sistemas', 'Mecánica', 'Electrónica'] } })
+  @ApiResponse({ status: 200, schema: { example: ['Programación', 'Mecánica', 'Química'] } })
   @Get('specialties')
   async getSpecialties(): Promise<string[]> {
     const specs = await this.specialtyService.findAll();

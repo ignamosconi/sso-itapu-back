@@ -8,7 +8,7 @@ export class OAuthClientEntity {
   @Column()
   clientName!: string;
 
-  @Column('simple-array')
+  @Column({ type: 'simple-json' })
   redirectUris!: string[];
 
   @Column({ unique: true })

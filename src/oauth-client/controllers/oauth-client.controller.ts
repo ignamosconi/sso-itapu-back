@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Inject, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Inject, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IOAuthClientController } from './oauth-client.controller.interface.js';
 import type { IOAuthClientService } from '../services/oauth-client.service.interface.js';
@@ -9,6 +9,13 @@ import { OAuthClientCreatedResponseDto } from '../dtos/oauth-client-created-resp
 import { OAuthClientInfoDto } from '../dtos/oauth-client-info.dto.js';
 import { SendCredentialsEmailDto } from '../dtos/send-credentials-email.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
+import { AdminJwtPayloadDto } from '../../admin-auth/dtos/admin-jwt-payload.dto.js';
+
+
+interface RequestWithAdmin {
+  admin: AdminJwtPayloadDto;
+}
+
 
 @ApiTags('Admin — Clientes OAuth')
 @Controller('admin/clients')
@@ -53,8 +60,8 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
   @Post()
-  create(@Body() dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto> {
-    return this.oauthClientService.create(dto);
+  create(@Request() req: RequestWithAdmin, @Body() dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto> {
+    return this.oauthClientService.create(dto, req.admin.sub);
   }
 
   @ApiOperation({ summary: 'Actualizar cliente OAuth' })
@@ -86,8 +93,8 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
   @Post(':id/regenerate-secret')
-  regenerateSecret(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientCreatedResponseDto> {
-    return this.oauthClientService.regenerateSecret(id);
+  regenerateSecret(@Request() req: RequestWithAdmin, @Param('id', ParseIntPipe) id: number): Promise<OAuthClientCreatedResponseDto> {
+    return this.oauthClientService.regenerateSecret(id, req.admin.sub);
   }
 
   @ApiOperation({ summary: 'Enviar credenciales por email' })
@@ -98,10 +105,11 @@ export class OAuthClientController implements IOAuthClientController {
   @UseGuards(AdminJwtGuard)
   @Post(':id/send-credentials')
   sendCredentialsByEmail(
+    @Request() req: RequestWithAdmin,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SendCredentialsEmailDto,
   ): Promise<void> {
-    return this.oauthClientService.sendCredentialsByEmail(id, dto.to);
+    return this.oauthClientService.sendCredentialsByEmail(id, dto.to, req.admin.sub);
   }
 
   @ApiOperation({ summary: 'Suspender cliente OAuth', description: 'El cliente no podrá autenticar usuarios hasta que sea reactivado.' })

@@ -349,6 +349,23 @@ export class StudentService implements IStudentService {
     return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true }));
   }
 
+  private parseBirthDate(raw: unknown): string {
+    // Celda con formato fecha de Excel → SheetJS devuelve Date
+    if (raw instanceof Date) {
+      const d = raw;
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    const s = String(raw ?? '').trim();
+    // DD/MM/AAAA o D/M/AAAA (texto plano, formato argentino)
+    const ddmm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmm) {
+      const [, day, month, year] = ddmm;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    // YYYY-MM-DD ya está bien
+    return s;
+  }
+
   async parseImportPreview(xlsxBuffer: Buffer): Promise<ImportPreviewResultDto> {
     const wb = XLSX.read(xlsxBuffer, { type: 'buffer', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
@@ -424,15 +441,7 @@ export class StudentService implements IStudentService {
       const domainRole = String(row['domain_role'] ?? '').trim();
       const specialty = String(row['specialty'] ?? '').trim();
 
-      // Fecha: SheetJS con cellDates:true devuelve Date para celdas de fecha Excel
-      // (independientemente del formato visual DD/MM/AAAA o AAAA-MM-DD)
-      let birthDate = '';
-      if (row['birth_date'] instanceof Date) {
-        const d = row['birth_date'] as Date;
-        birthDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      } else {
-        birthDate = String(row['birth_date'] ?? '').trim();
-      }
+      const birthDate = this.parseBirthDate(row['birth_date']);
 
       if (!nameRegex.test(firstName)) errors.push('Nombre/s: solo letras y espacios.');
       if (!nameRegex.test(lastName)) errors.push('Apellido/s: solo letras y espacios.');
@@ -441,7 +450,7 @@ export class StudentService implements IStudentService {
       if (isNaN(dni) || dni < 1000000) errors.push('DNI: debe ser un número de al menos 7 dígitos.');
 
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Email: formato inválido.');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) errors.push('Fecha de nacimiento: asegurate de que la celda esté formateada como fecha en Excel.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) errors.push('Fecha de nacimiento: usá formato DD/MM/AAAA o formato fecha de Excel. No uses guiones ni texto.');
       if (!roleMap.has(domainRole.toLowerCase())) errors.push(`Cargo: "${domainRole}" no existe en el sistema.`);
       if (!specMap.has(specialty.toLowerCase())) errors.push(`Especialidad: "${specialty}" no existe en el sistema.`);
 

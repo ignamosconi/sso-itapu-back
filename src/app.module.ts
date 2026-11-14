@@ -29,6 +29,8 @@ import { MailModule } from './mail/mail.module.js';
 import { SsoInfoModule } from './sso-info/sso-info.module.js';
 import { StatsModule } from './stats/stats.module.js';
 import { AdminSeeder } from './database/seeders/admin.seeder.js';
+import { ScheduleModule } from '@nestjs/schedule';
+
 
 @Module({
   imports: [
@@ -64,6 +66,9 @@ import { AdminSeeder } from './database/seeders/admin.seeder.js';
       }),
     }),
     TypeOrmModule.forFeature([AdminEntity]),
+
+    ScheduleModule.forRoot(), //Para limpiar la tabla de refresh tokens
+
     ThrottlerModule.forRoot([
       {
         name: 'global',

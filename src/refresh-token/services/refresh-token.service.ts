@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { RefreshTokenEntity } from '../entities/refresh-token.entity.js';
 import { IRefreshTokenService, SaveRefreshTokenParams } from './refresh-token.service.interface.js';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class RefreshTokenService implements IRefreshTokenService {
@@ -121,6 +122,8 @@ export class RefreshTokenService implements IRefreshTokenService {
     );
   }
 
+  //Agregamos un cron-job para limpiar la tabla de refresh-tokens
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async purgeExpired(): Promise<void> {
     await this.repo
       .createQueryBuilder()

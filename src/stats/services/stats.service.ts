@@ -16,9 +16,10 @@ export class StatsService implements IStatsService {
   ) {}
 
   async getDashboard(): Promise<DashboardStatsDto> {
-    const [oauthClientCount, studentCount, raw] = await Promise.all([
+    const [oauthClientCount, studentCount, pendingRegistrationCount, raw] = await Promise.all([
       this.oauthClientRepo.count({ where: { isActive: true } }),
       this.studentRepo.count(),
+      this.studentRepo.count({ where: { account_status: AccountStatus.PendingRegistration } }),
       this.studentRepo
         .createQueryBuilder('s')
         .select('sp.name', 'specialty')
@@ -31,6 +32,6 @@ export class StatsService implements IStatsService {
         .getRawMany<SpecialtyCountDto>(),
     ]);
 
-    return { oauthClientCount, studentCount, studentsBySpecialty: raw };
+    return { oauthClientCount, studentCount, pendingRegistrationCount, studentsBySpecialty: raw };
   }
 }

@@ -8,5 +8,6 @@ export class SpecialtyCountDto {
 export class DashboardStatsDto {
   @ApiProperty() oauthClientCount!: number;
   @ApiProperty() studentCount!: number;
+  @ApiProperty() pendingRegistrationCount!: number;
   @ApiProperty({ type: [SpecialtyCountDto] }) studentsBySpecialty!: SpecialtyCountDto[];
 }

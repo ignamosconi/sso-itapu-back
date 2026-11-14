@@ -110,6 +110,11 @@
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
+
+    "transformIgnorePatterns": [
+      "/node_modules/(?!@nestjs/schedule/)"
+    ],
+
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }

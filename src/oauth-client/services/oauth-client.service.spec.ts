@@ -31,6 +31,7 @@ describe('OAuthClientService', () => {
   let mockCredentialTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRedis: jest.Mocked<Record<string, jest.Mock>>;
+  let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
 
   beforeEach(async () => {
     mockRepo = {
@@ -49,10 +50,13 @@ describe('OAuthClientService', () => {
       revokeAllForClient: jest.fn().mockResolvedValue(undefined),
     };
 
-    // Mock de Redis — simula SET/GETDEL sin conexión real.
     mockRedis = {
       set: jest.fn().mockResolvedValue('OK'),
       getdel: jest.fn().mockResolvedValue(null),
+    };
+
+    mockMailService = {
+      send: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,6 +66,7 @@ describe('OAuthClientService', () => {
         { provide: 'ICredentialTokenService', useValue: mockCredentialTokenService },
         { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
         { provide: REDIS_CLIENT, useValue: mockRedis },
+        { provide: 'IMailService', useValue: mockMailService },
         {
           provide: ConfigService,
           useValue: {

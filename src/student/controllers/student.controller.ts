@@ -19,7 +19,7 @@ import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
-import type { Multer } from 'multer';   //Si no está esta línea, se rompe el multer abajo.
+import 'multer';   //Si no está esta línea, se rompe el multer abajo.
 
 @ApiTags('Admin — Padrón de usuarios')
 @ApiBearerAuth('admin-jwt')

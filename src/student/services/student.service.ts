@@ -17,7 +17,7 @@ import { DeleteStudentDto } from '../dtos/delete-student.dto.js';
 import { StudentResponseDto } from '../dtos/student-response.dto.js';
 import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto, ImportPreviewRowDto } from '../dtos/import-preview-result.dto.js';
-import { ImportConfirmDto, ImportConfirmResultDto, ImportStudentRowDto } from '../dtos/import-confirm.dto.js';
+import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { StudentCredentialsDto } from '../dtos/student-credentials.dto.js';
 import { ConfigService } from '@nestjs/config';
 import * as XLSX from 'xlsx';
@@ -305,7 +305,8 @@ export class StudentService implements IStudentService {
     // Formato de fecha DD/MM/YYYY en columna E (índice 4)
     [1, 2].forEach(rowIdx => {
       const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: 4 });
-      if (ws[cellRef]) ws[cellRef].z = 'DD/MM/YYYY';
+      const cell = ws[cellRef] as XLSX.CellObject | undefined;
+      if (cell) cell.z = 'DD/MM/YYYY';
     });
 
     // Columnas de referencia en I (8) y J (9) — fila 0 = encabezado
@@ -341,12 +342,19 @@ export class StudentService implements IStudentService {
     // Negrita en encabezados A-G
     headers.forEach((_, c) => {
       const ref = XLSX.utils.encode_cell({ r: 0, c });
-      if (ws[ref]) ws[ref].s = { font: { bold: true } };
+      const cell = ws[ref] as (XLSX.CellObject & { s?: unknown }) | undefined;
+      if (cell) cell.s = { font: { bold: true } };
     });
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Usuarios');
     return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true }));
+  }
+
+  private cellToString(val: unknown): string {
+    if (typeof val === 'string') return val.trim();
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    return '';
   }
 
   private parseBirthDate(raw: unknown): string {
@@ -355,7 +363,7 @@ export class StudentService implements IStudentService {
       const d = raw;
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
-    const s = String(raw ?? '').trim();
+    const s = this.cellToString(raw);
     // DD/MM/AAAA o D/M/AAAA (texto plano, formato argentino)
     const ddmm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (ddmm) {
@@ -434,12 +442,12 @@ export class StudentService implements IStudentService {
       const errors: string[] = [];
       const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ ]+$/;
 
-      const firstName = String(row['first_name'] ?? '').trim();
-      const lastName = String(row['last_name'] ?? '').trim();
+      const firstName = this.cellToString(row['first_name']);
+      const lastName = this.cellToString(row['last_name']);
       const dniRaw = row['dni'];
-      const email = String(row['email'] ?? '').trim();
-      const domainRole = String(row['domain_role'] ?? '').trim();
-      const specialty = String(row['specialty'] ?? '').trim();
+      const email = this.cellToString(row['email']);
+      const domainRole = this.cellToString(row['domain_role']);
+      const specialty = this.cellToString(row['specialty']);
 
       const birthDate = this.parseBirthDate(row['birth_date']);
 

@@ -14,7 +14,7 @@ import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtGuard } from '../guards/jwt.guard.js';
 import { CurrentUser } from '../decorators/current-user.decorator.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
-import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiResponse, ApiTags, ApiBody } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CheckUsernameRequestDto } from '../dtos/check-username-request.dto.js';
 import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js';
 import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';

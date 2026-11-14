@@ -8,7 +8,7 @@ export class MailService implements IMailService {
   private readonly transporter: nodemailer.Transporter;
   private readonly from: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(configService: ConfigService) {
     this.transporter = nodemailer.createTransport({
       host: configService.getOrThrow<string>('MAIL_HOST'),
       port: configService.getOrThrow<number>('MAIL_PORT'),

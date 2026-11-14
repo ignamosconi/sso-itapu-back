@@ -172,7 +172,6 @@ export class OAuthClientService implements IOAuthClientService {
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
 
-    const from = this.configService.getOrThrow<string>('MAIL_FROM');
     const ssoUrl = this.configService.getOrThrow<string>('SSO_BASE_URL');
 
     // Generar link de un solo uso con el secret cifrado
@@ -194,8 +193,6 @@ export class OAuthClientService implements IOAuthClientService {
     });
     const token = await this.credentialTokenService.generate(generateDto);
     const credentialsUrl = `${ssoUrl}/credentials/${token}`;
-
-    const urisList = client.redirectUris.map(uri => `  • ${uri}`).join('\n');
 
     try {
       await this.mailService.send(to, `Credenciales OAuth — ${client.clientName}`, {

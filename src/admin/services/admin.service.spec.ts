@@ -1,6 +1,14 @@
+jest.mock('bcrypt', () => ({
+  compare: jest.fn(),
+  hash: jest.fn().mockResolvedValue('$2b$12$hashedpassword'),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException, ConflictException, BadRequestException, UnauthorizedException,
+} from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { AdminService } from './admin.service.js';
 import { AdminEntity } from '../entities/admin.entity.js';
 
@@ -25,7 +33,6 @@ type MockRefreshTokenService = {
   revokeAllForSub: jest.Mock;
 };
 
-
 function makeAdmin(overrides: Partial<AdminEntity> = {}): AdminEntity {
   return {
     id: 'uuid-1',
@@ -45,6 +52,8 @@ describe('AdminService', () => {
   let mockRefreshTokenService: MockRefreshTokenService;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     mockRepo = {
       find: jest.fn(),
       findOne: jest.fn(),
@@ -113,23 +122,44 @@ describe('AdminService', () => {
     });
   });
 
-  describe('remove', () => {
+  describe('removeSelf', () => {
+    const validDeleteDto = {
+      password: 'password123',
+      confirmationPhrase: 'borrar-mi-cuenta-no-es-reversible',
+    };
+
     it('debería lanzar NotFoundException si el admin no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
-      await expect(service.remove('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.removeSelf('inexistente', validDeleteDto))
+        .rejects.toThrow(NotFoundException);
+    });
+
+    it('debería lanzar UnauthorizedException si la contraseña es incorrecta', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAdmin());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.removeSelf('uuid-1', {
+          password: 'wrong-password',
+          confirmationPhrase: 'borrar-mi-cuenta-no-es-reversible',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('debería lanzar BadRequestException si es el último admin', async () => {
       mockRepo.findOne.mockResolvedValue(makeAdmin());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockRepo.count.mockResolvedValue(1);
-      await expect(service.remove('uuid-1')).rejects.toThrow(BadRequestException);
+
+      await expect(service.removeSelf('uuid-1', validDeleteDto))
+        .rejects.toThrow(BadRequestException);
     });
 
     it('debería revocar tokens y eliminar el admin en una transacción', async () => {
       mockRepo.findOne.mockResolvedValue(makeAdmin());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockRepo.count.mockResolvedValue(2);
 
-      // Simular que transaction ejecuta el callback
       mockRepo.manager.transaction.mockImplementation(
         async (
           cb: (manager: MockEntityManager) => Promise<void>,
@@ -142,7 +172,7 @@ describe('AdminService', () => {
       );
       mockRefreshTokenService.revokeAllForSub.mockResolvedValue(undefined);
 
-      await service.remove('uuid-1');
+      await service.removeSelf('uuid-1', validDeleteDto);
 
       expect(mockRepo.manager.transaction).toHaveBeenCalled();
       expect(mockRefreshTokenService.revokeAllForSub).toHaveBeenCalledWith('uuid-1', expect.anything());

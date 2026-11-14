@@ -206,7 +206,7 @@ export class OAuthClientService implements IOAuthClientService {
           <body style="margin:0;padding:0;background:#0f0f1a;font-family:'Segoe UI',Arial,sans-serif">
             <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f1a;padding:40px 0">
               <tr><td align="center">
-                <table width="560" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden">
+                <table width="580" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;overflow:hidden">
 
                   <!-- Header -->
                   <tr><td style="background:#f5a705;padding:20px 32px">
@@ -249,37 +249,78 @@ export class OAuthClientService implements IOAuthClientService {
                       </tr>
                     </table>
 
+                    <!-- Endpoints de referencia -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;margin-bottom:24px">
+                      <tr><td style="padding:14px 18px">
+                        <p style="margin:0 0 8px;font-size:11px;font-weight:600;color:#a5b4fc;letter-spacing:0.08em;text-transform:uppercase">Endpoints de referencia (públicos)</p>
+                        <p style="margin:0 0 6px;font-size:12px;color:rgba(255,255,255,0.6)">
+                          Usá estos endpoints para obtener los valores válidos de <code style="color:#f5a705">grupo</code> y <code style="color:#f5a705">carrera</code>
+                          que devuelve <code style="color:#f5a705">/sso/me</code>. No hardcodees estos valores en tu app — consultá la API para que tu integración
+                          se adapte automáticamente si el administrador agrega o renombra cargos o especialidades.
+                        </p>
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+                              <code style="font-size:11px;color:#f5a705">GET ${ssoUrl}/sso/info/domain-roles</code>
+                              <span style="font-size:11px;color:rgba(255,255,255,0.4);margin-left:8px">→ valores posibles de <code style="color:#f5a705">grupo</code></span>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style="padding:6px 0">
+                              <code style="font-size:11px;color:#f5a705">GET ${ssoUrl}/sso/info/specialties</code>
+                              <span style="font-size:11px;color:rgba(255,255,255,0.4);margin-left:8px">→ valores posibles de <code style="color:#f5a705">carrera</code></span>
+                            </td>
+                          </tr>
+                        </table>
+                      </td></tr>
+                    </table>
+
                     <!-- Pasos de integración -->
-                    <p style="margin:0 0 10px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:0.08em;text-transform:uppercase">Integración rápida</p>
+                    <p style="margin:0 0 10px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:0.08em;text-transform:uppercase">Integración paso a paso</p>
                     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
                       ${[
-                        ['1. Abrir popup de login', `<code style="font-size:11px;color:#f5a705;word-break:break-all">${ssoUrl}/sso/login?client_id=${client.id}&amp;redirect_uri=TU_URI&amp;state=ALEATORIO&amp;theme=dark</code>`],
-                        ['2. Escuchar postMessage', `Verificá <code style="color:#f5a705">event.origin === "${ssoUrl}"</code> y el <code style="color:#f5a705">state</code> antes de procesar.`],
-                        ['3. Canjear code por tokens', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/token</code> — desde tu <strong>backend</strong> con client_secret.`],
-                        ['4. Obtener datos del usuario', `<code style="font-size:11px;color:#f5a705">GET ${ssoUrl}/sso/me</code> con <code style="color:#f5a705">Authorization: Bearer ACCESS_TOKEN</code>.`],
-                        ['5. Renovar tokens', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/refresh</code> — reemplazá ambos tokens con la respuesta.`],
-                        ['6. Cerrar sesión', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/logout</code> con el refresh_token.`],
+                        ['1. Abrir popup de login', `<code style="font-size:11px;color:#f5a705;word-break:break-all">${ssoUrl}/sso/login?client_id=${client.id}&amp;redirect_uri=TU_URI&amp;state=ALEATORIO&amp;theme=dark</code><br><span style="font-size:11px;color:rgba(255,255,255,0.4)">El popup pide usuario y contraseña. Si el usuario no configuró contraseña, el SSO le envía un email automáticamente.</span>`],
+                        ['2. Escuchar postMessage', `Verificá <code style="color:#f5a705">event.origin === "${ssoUrl}"</code> y el <code style="color:#f5a705">state</code> antes de procesar. Nunca omitas estas verificaciones.`],
+                        ['3. Canjear code por tokens', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/token</code> — desde tu <strong>backend</strong> con client_secret. El code es de un solo uso y expira en 2 minutos.`],
+                        ['4. Identificar al usuario', `<code style="font-size:11px;color:#f5a705">GET ${ssoUrl}/sso/me</code> con <code style="color:#f5a705">Authorization: Bearer ACCESS_TOKEN</code>. Usá <code style="color:#f5a705">sub</code> como ID único — no cambia nunca. Los campos <code style="color:#f5a705">cargo</code> y <code style="color:#f5a705">especialidad</code> reflejan los valores configurados por el administrador.`],
+                        ['5. Renovar tokens', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/refresh</code> cuando el access_token expire (cada 15 min). Reemplazá <strong>ambos</strong> tokens con la respuesta — el refresh anterior queda inválido.`],
+                        ['6. Cerrar sesión', `<code style="font-size:11px;color:#f5a705">POST ${ssoUrl}/sso/logout</code> con el refresh_token. También eliminá los tokens del almacenamiento de tu app.`],
                       ].map(([title, body]) => `
                         <tr><td style="padding:0 0 8px">
                           <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border-radius:6px">
                             <tr><td style="padding:12px 16px">
                               <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#ffffff">${title}</p>
-                              <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5">${body}</p>
+                              <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6">${body}</p>
                             </td></tr>
                           </table>
                         </td></tr>
                       `).join('')}
                     </table>
 
-                    <!-- Notas de seguridad -->
+                    <!-- Gestión de sesión -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.25);border-radius:8px;margin-bottom:24px">
+                      <tr><td style="padding:14px 18px">
+                        <p style="margin:0 0 8px;font-size:11px;font-weight:600;color:#5eead4;letter-spacing:0.06em;text-transform:uppercase">Gestión de sesión</p>
+                        <p style="margin:0 0 6px;font-size:12px;color:rgba(255,255,255,0.6)">La sesión del usuario finaliza automáticamente si:</p>
+                        <ul style="margin:0;padding-left:16px;font-size:12px;color:rgba(255,255,255,0.55);line-height:1.8">
+                          <li>El usuario hace logout → tokens revocados en el servidor.</li>
+                          <li>Inactividad de 8 horas sin usar el refresh_token.</li>
+                          <li>Límite absoluto de 3 días desde el primer login.</li>
+                          <li>Reutilización de un refresh_token ya usado → familia completa revocada al instante.</li>
+                        </ul>
+                      </td></tr>
+                    </table>
+
+                    <!-- Seguridad -->
                     <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px">
                       <tr><td style="padding:14px 18px">
                         <p style="margin:0 0 6px;font-size:11px;font-weight:600;color:#fc9797;letter-spacing:0.06em;text-transform:uppercase">Seguridad</p>
                         <ul style="margin:0;padding-left:16px;font-size:12px;color:rgba(255,255,255,0.55);line-height:1.8">
                           <li>Nunca expongas el Client Secret en el frontend.</li>
-                          <li>Guardá los tokens en cookies <code style="color:#f5a705">HttpOnly</code>, nunca en localStorage.</li>
+                          <li>Guardá los tokens en cookies <code style="color:#f5a705">HttpOnly</code> o en el backend — nunca en localStorage.</li>
                           <li>El authorization code es de un solo uso y expira en 2 minutos.</li>
-                          <li>Si perdés el Client Secret, pedí al administrador que lo regenere.</li>
+                          <li>Verificá siempre <code style="color:#f5a705">event.origin</code> y <code style="color:#f5a705">state</code> en el postMessage.</li>
+                          <li>Si perdés el Client Secret, pedile al administrador que lo regenere.</li>
                         </ul>
                       </td></tr>
                     </table>
@@ -297,6 +338,7 @@ export class OAuthClientService implements IOAuthClientService {
             </table>
           </body>
           </html>`,
+
       });
     } catch {
       throw new BadRequestException('Error al enviar el correo. Verificá la configuración de email.');

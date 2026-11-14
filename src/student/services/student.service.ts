@@ -287,7 +287,7 @@ export class StudentService implements IStudentService {
         'Ignacio Mariano', 'Mosconi', 44244136, 'alumno@gmail.com',
         new Date(2003, 4, 15),
         roles[0]?.name ?? 'Alumno',
-        specs[0]?.name ?? 'Sistemas',
+        specs[0]?.name ?? 'Mecánica',
       ],
       [
         'Ana', 'Pérez', 33456789, 'ana@ejemplo.com',

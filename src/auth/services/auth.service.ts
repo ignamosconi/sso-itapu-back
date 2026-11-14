@@ -107,10 +107,10 @@ export class AuthService implements IAuthService {
       sub: student.id,
       nombre: student.first_name,
       apellido: student.last_name,
-      legajo: student.username,
-      carrera: student.specialtyName,
+      username: student.username,
+      especialidad: student.specialtyName,
       email: student.email,
-      grupo: student.domainRoleName,
+      cargo: student.domainRoleName,
     };
   }
 
@@ -249,10 +249,10 @@ export class AuthService implements IAuthService {
       sub: storedPayload.sub,
       nombre: storedPayload.nombre,
       apellido: storedPayload.apellido,
-      legajo: storedPayload.legajo,
-      carrera: storedPayload.carrera,
+      username: storedPayload.username,
+      especialidad: storedPayload.especialidad,
       email: storedPayload.email,
-      grupo: storedPayload.grupo,
+      cargo: storedPayload.cargo,
     };
 
     const inactivityExpiry = new Date(Date.now() + this.parseExpiresIn(this.refreshExpiresIn) * 1000);
@@ -291,8 +291,13 @@ export class AuthService implements IAuthService {
 
   getCleanUserInfo(payload: JwtPayloadDto): UserInfoOauthDto {
     return {
-      sub: payload.sub, nombre: payload.nombre, apellido: payload.apellido,
-      legajo: payload.legajo, carrera: payload.carrera, email: payload.email, grupo: payload.grupo,
+      sub: payload.sub,
+      nombre: payload.nombre,
+      apellido: payload.apellido,
+      username: payload.username,
+      especialidad: payload.especialidad,
+      email: payload.email,
+      cargo: payload.cargo,
     };
   }
 }

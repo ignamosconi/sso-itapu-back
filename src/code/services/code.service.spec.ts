@@ -7,10 +7,10 @@ const mockUserInfo: UserInfoOauthDto = {
   sub: '123',
   nombre: 'Juan',
   apellido: 'Pérez',
-  legajo: '12345',
-  carrera: 'Sistemas',
-  email: 'juan@frvm.utn.edu.ar',
-  grupo: 'Alumno',
+  username: 'immosconi136',
+  especialidad: 'Mecánica',
+  email: 'alumno@gmail.com',
+  cargo: 'Alumno',
 };
 
 describe('CodeService', () => {

@@ -38,6 +38,7 @@ export class RefreshTokenEntity {
   // App OAuth a través de la cual se autenticó el alumno.
   // NULL para tokens de tipo 'admin' (no pasan por una app OAuth).
   // Siempre presente para tokens de tipo 'student'.
+  @Index()
   @Column({ nullable: true, type: 'int' })
   clientId!: number | null;
 

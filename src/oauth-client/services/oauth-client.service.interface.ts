@@ -9,11 +9,11 @@ export interface IOAuthClientService {
   findOne(id: number): Promise<OAuthClientResponseDto>;
   findInfo(id: number): Promise<OAuthClientInfoDto>;
   validateClient(id: number, secret: string, redirectUri: string): Promise<boolean>;
-  create(dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto>;
+  create(dto: CreateOAuthClientDto, adminId: string): Promise<OAuthClientCreatedResponseDto>;
   update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto>;
   remove(id: number): Promise<void>;
-  regenerateSecret(id: number): Promise<OAuthClientCreatedResponseDto>;
-  sendCredentialsByEmail(id: number, to: string): Promise<void>;
+  regenerateSecret(id: number, adminId: string): Promise<OAuthClientCreatedResponseDto>;
+  sendCredentialsByEmail(id: number, to: string, adminId: string): Promise<void>;
   suspend(id: number): Promise<OAuthClientResponseDto>;
   activate(id: number): Promise<OAuthClientResponseDto>;
 }

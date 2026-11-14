@@ -124,7 +124,7 @@ export class StudentController implements IStudentController {
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   @ApiResponse({ status: 200, type: ImportPreviewResultDto })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
   @Post('import/preview')
   importPreview(@UploadedFile() file: Express.Multer.File): Promise<ImportPreviewResultDto> {
     if (!file) throw new BadRequestException('No se recibió ningún archivo.');

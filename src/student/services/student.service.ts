@@ -56,6 +56,7 @@ export class StudentService implements IStudentService {
       dni: e.dni,
       birth_date: e.birth_date,
       account_status: e.account_status,
+      hasPassword: e.password !== null,
       domainRole: { id: e.domainRole.id, name: e.domainRole.name },
       specialty: { id: e.specialty.id, name: e.specialty.name },
       createdAt: e.createdAt,
@@ -268,10 +269,9 @@ export class StudentService implements IStudentService {
   async activate(id: string): Promise<StudentResponseDto> {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException(`Alumno con id ${id} no encontrado.`);
-    if (entity.password === null) {
-      throw new BadRequestException('No se puede activar una cuenta sin contraseña configurada (registro pendiente).');
-    }
-    entity.account_status = AccountStatus.Active;
+    entity.account_status = entity.password === null
+      ? AccountStatus.PendingRegistration
+      : AccountStatus.Active;
     return this.toDto(await this.repo.save(entity));
   }
 

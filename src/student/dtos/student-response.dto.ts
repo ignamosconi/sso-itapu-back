@@ -9,6 +9,7 @@ export class StudentResponseDto {
   @ApiProperty() dni!: number;
   @ApiProperty() birth_date!: Date;
   @ApiProperty() account_status!: string;
+  @ApiProperty() hasPassword!: boolean;
   @ApiProperty() domainRole!: { id: number; name: string };
   @ApiProperty() specialty!: { id: number; name: string };
   @ApiProperty() createdAt!: Date;

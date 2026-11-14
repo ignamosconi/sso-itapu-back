@@ -1,4 +1,3 @@
-// DESPUÉS
 import { Response } from 'express';
 import { LoginRequestDto } from '../dtos/login-request.dto.js';
 import { AuthorizationCodeRequestDto } from '../dtos/authorization-code-request.dto.js';
@@ -12,7 +11,7 @@ import { CheckUsernameRequestDto } from '../dtos/check-username-request.dto.js';
 import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js';
 import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
 import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
-
+import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
 
 export interface IAuthController {
   serveLoginPage(res: Response): void;
@@ -23,5 +22,6 @@ export interface IAuthController {
   me(user: JwtPayloadDto): UserInfoOauthDto;
   checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto>;
   requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<void>;
+  validateResetToken(dto: ValidateResetTokenRequestDto): Promise<void>;
   setPassword(dto: SetPasswordRequestDto): Promise<void>;
 }

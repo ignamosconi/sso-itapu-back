@@ -19,6 +19,7 @@ import { CheckUsernameRequestDto } from '../dtos/check-username-request.dto.js';
 import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js';
 import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
 import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
+import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
 
 @ApiTags('SSO — Alumnos')
 @Controller(process.env.AUTH_ROUTE_PATH || 'oauth')
@@ -108,6 +109,21 @@ export class AuthController implements IAuthController {
   @Post('check-username')
   async checkUsername(@Body() dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto> {
     return this.authService.checkUsername(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Validar si un token de configuración/recuperación de contraseña sigue vigente',
+    description: 'Verifica que el token exista, no haya sido utilizado, no esté expirado y que la cuenta no esté suspendida ni eliminada, sin consumirlo.',
+  })
+  @ApiResponse({ status: 204, description: 'Token válido' })
+  @ApiResponse({ status: 401, description: 'Cuenta suspendida' })
+  @ApiResponse({ status: 404, description: 'Token o alumno no encontrado' })
+  @ApiResponse({ status: 410, description: 'Token ya utilizado o expirado' })
+  @Throttle({ default: { ttl: 60000, limit: 15 } })
+  @HttpCode(204)
+  @Post('validate-reset-token')
+  async validateResetToken(@Body() dto: ValidateResetTokenRequestDto): Promise<void> {
+    return this.authService.validatePasswordResetToken(dto);
   }
 
   @ApiOperation({

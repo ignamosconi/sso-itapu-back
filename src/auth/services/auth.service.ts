@@ -25,6 +25,7 @@ import { CodeResponseDto } from '../dtos/code-response.dto.js';
 import { TokenResponseDto } from '../dtos/token-response.dto.js';
 import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
+import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
 
 @Injectable()
 export class AuthService implements IAuthService {
@@ -157,6 +158,14 @@ export class AuthService implements IAuthService {
       );
     }
     await this.studentService.sendPasswordResetEmail(student);
+  }
+
+  async validatePasswordResetToken(dto: ValidateResetTokenRequestDto): Promise<void> {
+    const { studentId } = await this.passwordResetTokenService.validate(dto.token);
+    const student = await this.studentService.findOne(studentId);
+    if (student.account_status === 'suspended') {
+      throw new UnauthorizedException('La cuenta está suspendida.');
+    }
   }
 
   async setPassword(dto: SetPasswordRequestDto): Promise<void> {

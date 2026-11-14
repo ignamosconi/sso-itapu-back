@@ -36,6 +36,15 @@ export class PasswordResetTokenService implements IPasswordResetTokenService {
     return plain;
   }
 
+  async validate(token: string): Promise<{ studentId: string; purpose: 'setup' | 'reset' }> {
+    const tokenHash = this.hash(token);
+    const existing = await this.repo.findOne({ where: { tokenHash } });
+    if (!existing) throw new NotFoundException('El link no es válido.');
+    if (existing.used) throw new GoneException('Este link ya fue utilizado.');
+    if (existing.expiresAt <= new Date()) throw new GoneException('Este link ha expirado.');
+    return { studentId: existing.studentId, purpose: existing.purpose };
+  }
+
   async consume(token: string): Promise<{ studentId: string; purpose: 'setup' | 'reset' }> {
     const tokenHash = this.hash(token);
 

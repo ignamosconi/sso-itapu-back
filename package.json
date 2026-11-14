@@ -108,9 +108,11 @@
       "^(\\.{1,2}/.*)\\.js$": "$1"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/services/*.ts",
+      "**/guards/*.ts",
+      "!**/*.spec.ts",
+      "!**/*.interface.ts"
     ],
-
     "transformIgnorePatterns": [
       "/node_modules/(?!@nestjs/schedule/)"
     ],

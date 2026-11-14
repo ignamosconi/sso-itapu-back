@@ -113,8 +113,8 @@ export class StudentController implements IStudentController {
 
   @ApiOperation({ summary: 'Descargar CSV de ejemplo para carga masiva' })
   @Get('import/example')
-  downloadExample(@Res() res: Response): void {
-    const buffer = this.service.generateExampleXlsx();
+  async downloadExample(@Res() res: Response): Promise<void> {
+    const buffer = await this.service.generateExampleXlsx();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="ejemplo-carga-masiva.xlsx"');
     res.send(buffer);

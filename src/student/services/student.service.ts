@@ -276,22 +276,77 @@ export class StudentService implements IStudentService {
   }
 
   // ── Import Excel ───────────────────────────────────────────────────────────
-  generateExampleXlsx(): Buffer {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['first_name', 'last_name', 'dni', 'email', 'birth_date', 'domain_role', 'specialty'],
-      ['Ignacio Mariano', 'Mosconi', 44244136, 'alumno@gmail.com', '2003-05-15', 'Alumno', 'Sistemas'],
-      ['María Elena', 'García López', 33456789, 'otro@ejemplo.com', '1998-11-22', 'Docente', 'Mecánica'],
-    ]);
+  async generateExampleXlsx(): Promise<Buffer> {
+    const roles = await this.domainRoleRepo.find({ order: { name: 'ASC' } });
+    const specs = await this.specialtyRepo.find({ order: { name: 'ASC' } });
 
-    // Ancho de columnas para que sea legible al abrir
+    const headers = ['Nombre/s', 'Apellido/s', 'DNI', 'Email', 'Fecha de nacimiento', 'Cargo', 'Especialidad'];
+
+    const exampleRows = [
+      [
+        'Ignacio Mariano', 'Mosconi', 44244136, 'alumno@gmail.com',
+        new Date(2003, 4, 15),
+        roles[0]?.name ?? 'Alumno',
+        specs[0]?.name ?? 'Sistemas',
+      ],
+      [
+        'Ana', 'Pérez', 33456789, 'ana@ejemplo.com',
+        new Date(1998, 10, 22),
+        roles[1]?.name ?? roles[0]?.name ?? 'Docente',
+        specs[1]?.name ?? specs[0]?.name ?? 'Mecánica',
+      ],
+    ];
+
+    // Construir la grilla principal (columnas A-G)
+    const data: unknown[][] = [headers, ...exampleRows];
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // Formato de fecha DD/MM/YYYY en columna E (índice 4)
+    [1, 2].forEach(rowIdx => {
+      const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: 4 });
+      if (ws[cellRef]) ws[cellRef].z = 'DD/MM/YYYY';
+    });
+
+    // Columnas de referencia en I (8) y J (9) — fila 0 = encabezado
+    const refColCargo = 8;   // columna I
+    const refColSpec  = 9;   // columna J
+
+    const setCellValue = (r: number, c: number, v: string, bold = false) => {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      ws[ref] = { t: 's', v, s: bold ? { font: { bold: true } } : {} };
+      // Actualizar rango
+      const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1');
+      if (c > range.e.c) range.e.c = c;
+      if (r > range.e.r) range.e.r = r;
+      ws['!ref'] = XLSX.utils.encode_range(range);
+    };
+
+    setCellValue(0, refColCargo, 'Cargos válidos', true);
+    setCellValue(0, refColSpec,  'Especialidades válidas', true);
+
+    const maxRows = Math.max(roles.length, specs.length);
+    for (let i = 0; i < maxRows; i++) {
+      if (roles[i])  setCellValue(i + 1, refColCargo, roles[i].name);
+      if (specs[i])  setCellValue(i + 1, refColSpec,  specs[i].name);
+    }
+
     ws['!cols'] = [
       { wch: 20 }, { wch: 20 }, { wch: 12 }, { wch: 28 },
-      { wch: 14 }, { wch: 20 }, { wch: 20 },
+      { wch: 22 }, { wch: 20 }, { wch: 20 },
+      { wch: 4  },              // columna H vacía
+      { wch: 20 }, { wch: 24 }, // I y J
     ];
+
+    // Negrita en encabezados A-G
+    headers.forEach((_, c) => {
+      const ref = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[ref]) ws[ref].s = { font: { bold: true } };
+    });
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Usuarios');
-    return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+    return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true }));
   }
 
   async parseImportPreview(xlsxBuffer: Buffer): Promise<ImportPreviewResultDto> {
@@ -299,14 +354,55 @@ export class StudentService implements IStudentService {
     const ws = wb.Sheets[wb.SheetNames[0]];
     if (!ws) throw new BadRequestException('El archivo no contiene hojas de cálculo.');
 
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
-    if (rows.length === 0) throw new BadRequestException('El archivo está vacío o solo tiene encabezados.');
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+    if (rawRows.length === 0) throw new BadRequestException('El archivo está vacío o solo tiene encabezados.');
+
+    // Mapeo de encabezados español → campo interno
+    const normalizeHeader = (h: string): string => {
+      const map: Record<string, string> = {
+        'nombre/s': 'first_name', 'nombres': 'first_name',
+        'apellido/s': 'last_name', 'apellidos': 'last_name',
+        'dni': 'dni', 'email': 'email',
+        'fecha de nacimiento': 'birth_date',
+        'cargo': 'domain_role',
+        'especialidad': 'specialty',
+        // compatibilidad con encabezados ingleses anteriores
+        'first_name': 'first_name', 'last_name': 'last_name',
+        'birth_date': 'birth_date', 'domain_role': 'domain_role',
+        'specialty': 'specialty',
+      };
+      return map[h.trim().toLowerCase()] ?? h.trim().toLowerCase();
+    };
+
+    // Normalizar claves de cada fila, ignorar filas de la sección de referencia (DNI vacío)
+    const rows = rawRows
+      .map(raw => {
+        const normalized: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(raw)) {
+          normalized[normalizeHeader(k)] = v;
+        }
+        return normalized;
+      })
+      .filter(row => {
+        // Filtrar filas vacías y la sección de valores de referencia (sin DNI real)
+        const dni = row['dni'];
+        return dni !== '' && dni !== undefined && dni !== null;
+      });
+
+    if (rows.length === 0) throw new BadRequestException('El archivo no contiene filas de datos.');
 
     const required = ['first_name', 'last_name', 'dni', 'email', 'birth_date', 'domain_role', 'specialty'];
+    const spanishNames: Record<string, string> = {
+      first_name: 'Nombre/s', last_name: 'Apellido/s', dni: 'DNI',
+      email: 'Email', birth_date: 'Fecha de nacimiento',
+      domain_role: 'Cargo', specialty: 'Especialidad',
+    };
     const headers = Object.keys(rows[0]);
     const missing = required.filter(r => !headers.includes(r));
     if (missing.length > 0) {
-      throw new BadRequestException(`Faltan columnas requeridas: ${missing.join(', ')}.`);
+      throw new BadRequestException(
+        `Faltan columnas requeridas: ${missing.map(m => spanishNames[m] ?? m).join(', ')}.`,
+      );
     }
 
     const roles = await this.domainRoleRepo.find();
@@ -328,7 +424,8 @@ export class StudentService implements IStudentService {
       const domainRole = String(row['domain_role'] ?? '').trim();
       const specialty = String(row['specialty'] ?? '').trim();
 
-      // birth_date: SheetJS puede devolver un Date si cellDates:true
+      // Fecha: SheetJS con cellDates:true devuelve Date para celdas de fecha Excel
+      // (independientemente del formato visual DD/MM/AAAA o AAAA-MM-DD)
       let birthDate = '';
       if (row['birth_date'] instanceof Date) {
         const d = row['birth_date'] as Date;
@@ -337,16 +434,27 @@ export class StudentService implements IStudentService {
         birthDate = String(row['birth_date'] ?? '').trim();
       }
 
-      if (!nameRegex.test(firstName)) errors.push('first_name: solo letras y espacios.');
-      if (!nameRegex.test(lastName)) errors.push('last_name: solo letras y espacios.');
+      if (!nameRegex.test(firstName)) errors.push('Nombre/s: solo letras y espacios.');
+      if (!nameRegex.test(lastName)) errors.push('Apellido/s: solo letras y espacios.');
 
       const dni = typeof dniRaw === 'number' ? dniRaw : parseInt(String(dniRaw), 10);
-      if (isNaN(dni) || dni < 1000000) errors.push('dni: debe ser un número de al menos 7 dígitos.');
+      if (isNaN(dni) || dni < 1000000) errors.push('DNI: debe ser un número de al menos 7 dígitos.');
 
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('email: formato inválido.');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) errors.push('birth_date: formato debe ser YYYY-MM-DD.');
-      if (!roleMap.has(domainRole.toLowerCase())) errors.push(`domain_role: "${domainRole}" no existe.`);
-      if (!specMap.has(specialty.toLowerCase())) errors.push(`specialty: "${specialty}" no existe.`);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Email: formato inválido.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) errors.push('Fecha de nacimiento: asegurate de que la celda esté formateada como fecha en Excel.');
+      if (!roleMap.has(domainRole.toLowerCase())) errors.push(`Cargo: "${domainRole}" no existe en el sistema.`);
+      if (!specMap.has(specialty.toLowerCase())) errors.push(`Especialidad: "${specialty}" no existe en el sistema.`);
+
+      // Verificar duplicados en la DB
+      const dniNum = typeof dniRaw === 'number' ? dniRaw : parseInt(String(dniRaw), 10);
+      if (!isNaN(dniNum) && dniNum >= 1000000) {
+        const dniExists = await this.repo.findOne({ where: { dni: dniNum } });
+        if (dniExists) errors.push(`DNI: ${dniNum} ya está registrado en el sistema (usuario: ${dniExists.username}).`);
+      }
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        const emailExists = await this.repo.findOne({ where: { email } });
+        if (emailExists) errors.push(`Email: "${email}" ya está registrado en el sistema.`);
+      }
 
       const role = roleMap.get(domainRole.toLowerCase());
       const spec = specMap.get(specialty.toLowerCase());

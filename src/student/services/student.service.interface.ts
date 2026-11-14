@@ -17,7 +17,7 @@ export interface IStudentService {
   activate(id: string): Promise<StudentResponseDto>;
   parseImportPreview(csvBuffer: Buffer): Promise<ImportPreviewResultDto>;
   confirmImport(dto: ImportConfirmDto): Promise<ImportConfirmResultDto>;
-  generateExampleXlsx(): Buffer;
+  generateExampleXlsx(): Promise<Buffer>;
 
   // Email
   sendPasswordResetEmail(student: StudentCredentialsDto): Promise<void>;

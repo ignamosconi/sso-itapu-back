@@ -20,20 +20,21 @@ export class AdminJwtGuard implements CanActivate {
     }
 
     const token = authHeader.split(' ')[1];
+    let payload: AdminJwtPayloadDto;
 
     try {
-      const payload = await this.jwtService.verifyAsync<AdminJwtPayloadDto>(token, {
+      payload = await this.jwtService.verifyAsync<AdminJwtPayloadDto>(token, {
         secret: this.configService.getOrThrow<string>('JWT_ADMIN_ACCESS_SECRET'),
       });
-      if (payload.type !== 'access') {
-        throw new UnauthorizedException('Token de admin inválido o expirado.');
-      }
-      const typedRequest = request as ExpressRequest & { admin: AdminJwtPayloadDto };
-      typedRequest.admin = payload;
     } catch {
       throw new UnauthorizedException('Token de admin inválido o expirado.');
     }
 
+    if (payload.type !== 'access') {
+      throw new UnauthorizedException('Token de admin inválido o expirado.');
+    }
+
+    (context.switchToHttp().getRequest<ExpressRequest & { admin: AdminJwtPayloadDto }>()).admin = payload;
     return true;
   }
 }

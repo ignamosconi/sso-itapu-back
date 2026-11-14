@@ -2,9 +2,9 @@ name: CI — Backend
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master, dev]
   pull_request:
-    branches: [main, develop]
+    branches: [master, dev]
 
 jobs:
   test:
@@ -41,14 +41,14 @@ jobs:
           CREDENTIAL_TOKEN_TTL_MS: '86400000'
           CREDENTIAL_ENCRYPTION_KEY: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
           TOTP_ENCRYPTION_KEY: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-          AUTOGESTION_BASE_URL: 'https://webservice.frvm.utn.edu.ar/autogestion'
+          PASSWORD_RESET_TOKEN_TTL_MS: '86400000'
           ADMIN_PANEL_URL: 'http://localhost:5173'
           SSO_BASE_URL: 'http://localhost:3000'
           DB_HOST: localhost
           DB_PORT: '5432'
           DB_USERNAME: postgres
           DB_PASSWORD: postgres
-          DB_NAME: sso_frvm
+          DB_NAME: sso_itapu
           JWT_ACCESS_SECRET: 'test-access-secret-suficientemente-largo'
           JWT_REFRESH_SECRET: 'test-refresh-secret-suficientemente-largo'
           JWT_ACCESS_EXPIRES_IN: '15m'

@@ -55,7 +55,16 @@ export class AdminService implements IAdminService {
       if (exists) throw new ConflictException(`El username "${dto.username}" ya está en uso.`);
       admin.username = dto.username;
     }
-    if (dto.password) admin.password = await bcrypt.hash(dto.password, 12);
+    if (dto.password) {
+      if (!dto.currentPassword) {
+        throw new BadRequestException('Debés ingresar tu contraseña actual para cambiarla.');
+      }
+      const currentValid = await bcrypt.compare(dto.currentPassword, admin.password);
+      if (!currentValid) {
+        throw new UnauthorizedException('La contraseña actual ingresada es incorrecta.');
+      }
+      admin.password = await bcrypt.hash(dto.password, 12);
+    }
     return this.toDto(await this.adminRepository.save(admin));
   }
 

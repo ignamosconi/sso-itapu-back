@@ -14,9 +14,9 @@ export class LoginRequestDto {
   @IsString()
   state!: string;
 
-  @ApiProperty({ example: '13692' })
+  @ApiProperty({ example: 'immosconi136', description: 'Nombre de usuario del alumno.' })
   @IsString()
-  legajo!: string;
+  username!: string;
 
   @ApiProperty({ example: 'mi_contraseña_segura123!' })
   @IsString()

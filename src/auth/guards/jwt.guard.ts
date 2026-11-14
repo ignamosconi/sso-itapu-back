@@ -21,23 +21,21 @@ export class JwtGuard implements CanActivate {
     }
 
     const token = authHeader.split(' ')[1];
+    let payload: JwtPayloadDto;
 
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayloadDto>(token, {
+      payload = await this.jwtService.verifyAsync<JwtPayloadDto>(token, {
         secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
       });
-
-      if (payload.type !== 'access') {
-        throw new UnauthorizedException('El token proporcionado no es un access token.');
-      }
-
-      const typedRequest = request as ExpressRequest & { user: UserInfoOauthDto };
-      typedRequest.user = payload;
-      
     } catch {
       throw new UnauthorizedException('Token inválido o expirado.');
     }
 
+    if (payload.type !== 'access') {
+      throw new UnauthorizedException('Token inválido o expirado.');
+    }
+
+    (request as ExpressRequest & { user: UserInfoOauthDto }).user = payload;
     return true;
   }
 }

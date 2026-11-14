@@ -26,6 +26,10 @@ export class PasswordResetTokenService implements IPasswordResetTokenService {
   }
 
   async generate(studentId: string, purpose: 'setup' | 'reset'): Promise<string> {
+    // Invalidar tokens anteriores del mismo alumno y propósito para que
+    // solo el link más reciente sea válido.
+    await this.repo.delete({ studentId, purpose, used: false });
+
     const plain = randomBytes(32).toString('hex');
     await this.repo.save({
       tokenHash: this.hash(plain),

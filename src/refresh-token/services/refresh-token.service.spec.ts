@@ -193,4 +193,66 @@ describe('RefreshTokenService', () => {
       expect(mockManager.getRepository).toHaveBeenCalledWith(RefreshTokenEntity);
     });
   });
+
+  describe('sessionExpiresAt', () => {
+  it('debería revocar y lanzar UnauthorizedException si la sesión absoluta expiró', async () => {
+    const expiredSession = {
+      ...makeRecord({ sessionExpiresAt: new Date(Date.now() - 1000), clientId: 1 }),
+      expiresAt: new Date(Date.now() + 60_000), // inactividad aún vigente
+    };
+    const qb = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 1, raw: [expiredSession] }),
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(qb);
+    mockRepo.update.mockResolvedValue({});
+
+    await expect(service.consume('plain-token')).rejects.toThrow(UnauthorizedException);
+    expect(mockRepo.update).toHaveBeenCalledWith(
+      { familyId: 'family-uuid' },
+      { revoked: true },
+    );
+  });
+});
+
+describe('revokeAllForClient', () => {
+  it('debería revocar todos los tokens activos del cliente', async () => {
+    mockRepo.update.mockResolvedValue({});
+    await service.revokeAllForClient(42);
+    expect(mockRepo.update).toHaveBeenCalledWith(
+      { clientId: 42, revoked: false },
+      { revoked: true },
+    );
+  });
+
+  it('debería usar el manager externo si se pasa', async () => {
+    const mockManager = {
+      getRepository: jest.fn().mockReturnValue({
+        update: jest.fn().mockResolvedValue({}),
+      }),
+    };
+    await service.revokeAllForClient(42, mockManager as unknown as EntityManager);
+    expect(mockManager.getRepository).toHaveBeenCalledWith(RefreshTokenEntity);
+  });
+});
+
+  describe('purgeExpired', () => {
+    it('debería eliminar tokens expirados', async () => {
+      const qb = {
+        delete: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 5 }),
+      };
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.purgeExpired();
+
+      expect(qb.delete).toHaveBeenCalled();
+      expect(qb.execute).toHaveBeenCalled();
+    });
+  });
 });

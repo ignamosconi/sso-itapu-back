@@ -33,7 +33,7 @@ describe('JwtGuard', () => {
 
     expect(result).toBe(true);
     // Verifica que el payload queda en el request
-    const req = ctx.switchToHttp().getRequest() as Record<string, unknown>;
+    const req = ctx.switchToHttp().getRequest();
     expect(req.user).toEqual(payload);
   });
 

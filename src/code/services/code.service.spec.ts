@@ -95,4 +95,25 @@ describe('CodeService', () => {
       });
     });
   });
+
+  describe('purgeExpired (via consume)', () => {
+    it('debería retornar null para un código que fue purgado por expiración', () => {
+      const fastService = new CodeService({
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        getOrThrow: (_key: string) => '1',
+      } as unknown as ConfigService);
+      const code = fastService.generate(mockUserInfo, 1);
+
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          // El código expiró — purgeExpired lo habrá limpiado en el próximo ciclo
+          // o consume lo descarta por expiresAt
+          const result = fastService.consume(code);
+          expect(result).toBeNull();
+          fastService.onModuleDestroy();
+          resolve();
+        }, 10);
+      });
+    });
+  });
 });

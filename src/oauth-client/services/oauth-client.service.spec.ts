@@ -201,7 +201,7 @@ describe('OAuthClientService', () => {
       mockRepo.save.mockResolvedValue(client);
 
       const result = await service.create(
-        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] } as never,
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
         'admin-uuid',
       );
 
@@ -222,7 +222,7 @@ describe('OAuthClientService', () => {
       mockRepo.findOne.mockResolvedValue(null);
       // create no hace findOne previo, solo save — este test verifica el flujo básico
       const result = await service.create(
-        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] } as never,
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
         'admin-uuid',
       );
       expect(result).toBeDefined();

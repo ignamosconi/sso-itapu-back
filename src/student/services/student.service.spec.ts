@@ -18,11 +18,11 @@ import { SpecialtyEntity } from '../../specialty/entities/specialty.entity.js';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeDomainRole(overrides: Partial<DomainRoleEntity> = {}): DomainRoleEntity {
-  return { id: 1, name: 'Alumno', createdAt: new Date(), updatedAt: new Date(), ...overrides } as DomainRoleEntity;
+  return { id: 1, name: 'Alumno', createdAt: new Date(), updatedAt: new Date(), ...overrides };
 }
 
 function makeSpecialty(overrides: Partial<SpecialtyEntity> = {}): SpecialtyEntity {
-  return { id: 1, name: 'Mecánica', createdAt: new Date(), updatedAt: new Date(), ...overrides } as SpecialtyEntity;
+  return { id: 1, name: 'Mecánica', createdAt: new Date(), updatedAt: new Date(), ...overrides };
 }
 
 function makeStudent(overrides: Partial<StudentEntity> = {}): StudentEntity {
@@ -43,7 +43,7 @@ function makeStudent(overrides: Partial<StudentEntity> = {}): StudentEntity {
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
-  } as StudentEntity;
+  };
 }
 
 function makeQueryBuilder(overrides: Record<string, jest.Mock> = {}) {
@@ -202,7 +202,7 @@ describe('StudentService', () => {
       mockRepo.create.mockReturnValue(makeStudent({ password: null }));
       mockRepo.save.mockResolvedValue(makeStudent({ password: null }));
 
-      const result = await service.create(createDto as never);
+      const result = await service.create(createDto);
 
       expect(result.id).toBe('student-uuid');
       expect(result.hasPassword).toBe(false);
@@ -249,7 +249,7 @@ describe('StudentService', () => {
       mockRepo.create.mockReturnValue(makeStudent({ username: 'immosconi136_2', password: null }));
       mockRepo.save.mockResolvedValue(makeStudent({ username: 'immosconi136_2', password: null }));
 
-      const result = await service.create(createDto as never);
+      const result = await service.create(createDto);
       expect(result).toBeDefined();
     });
   });
@@ -467,4 +467,30 @@ describe('StudentService', () => {
       await expect(service.resendWelcome('no-existe')).rejects.toThrow(NotFoundException);
     });
   });
+
+  describe('sendPasswordResetEmail', () => {
+    it('debería generar token de reset y enviar email al alumno', async () => {
+      const student = {
+        id: 'student-uuid',
+        username: 'immosconi136',
+        email: 'alumno@gmail.com',
+        first_name: 'Ignacio',
+        last_name: 'Mosconi',
+        password: '$2b$10$hashed',
+        account_status: 'active',
+        domainRoleName: 'Alumno',
+        specialtyName: 'Mecánica',
+      };
+
+      await service.sendPasswordResetEmail(student);
+
+      expect(mockPasswordResetTokenService.generate).toHaveBeenCalledWith('student-uuid', 'reset');
+      expect(mockMailService.send).toHaveBeenCalledWith(
+        'alumno@gmail.com',
+        expect.stringContaining('contraseña'),
+        expect.objectContaining({ html: expect.any(String) }),
+      );
+    });
+  });
+
 });

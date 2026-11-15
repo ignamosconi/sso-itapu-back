@@ -143,7 +143,7 @@ describe('AuthService', () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      const result = await service.validateAndGetUserInfo(loginDto as never);
+      const result = await service.validateAndGetUserInfo(loginDto);
       expect(result.sub).toBe('student-uuid');
       expect(result.username).toBe('immosconi136');
       expect(result.cargo).toBe('Alumno');
@@ -306,7 +306,7 @@ describe('AuthService', () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      const result = await service.issueCode(loginDto as never);
+      const result = await service.issueCode(loginDto);
       expect(result.code).toBe('generated-code');
       expect(result.state).toBe('random-state');
     });
@@ -350,7 +350,7 @@ describe('AuthService', () => {
       mockCodeService.consume.mockReturnValue({ userInfo, clientId: 1 });
       mockRefreshTokenService.save.mockResolvedValue(undefined);
 
-      const result = await service.exchangeCodeForTokens(tokenDto as never);
+      const result = await service.exchangeCodeForTokens(tokenDto);
       expect(result.access_token).toBe('signed-jwt');
       expect(result.refresh_token).toBe('signed-jwt');
       expect(result.token_type).toBe('Bearer');

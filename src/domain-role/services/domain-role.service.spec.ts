@@ -13,7 +13,7 @@ function makeDomainRole(overrides: Partial<DomainRoleEntity> = {}): DomainRoleEn
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
-  } as DomainRoleEntity;
+  };
 }
 
 // ── Suite ─────────────────────────────────────────────────────────────────────

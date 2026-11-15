@@ -13,7 +13,7 @@ function makeSpecialty(overrides: Partial<SpecialtyEntity> = {}): SpecialtyEntit
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
-  } as SpecialtyEntity;
+  };
 }
 
 // ── Suite ─────────────────────────────────────────────────────────────────────

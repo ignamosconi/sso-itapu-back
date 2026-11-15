@@ -32,7 +32,7 @@ describe('AdminJwtGuard', () => {
     const result = await guard.canActivate(ctx);
 
     expect(result).toBe(true);
-    const req = ctx.switchToHttp().getRequest() as Record<string, unknown>;
+    const req = ctx.switchToHttp().getRequest();
     expect(req.admin).toEqual(payload);
   });
 

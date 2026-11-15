@@ -17,7 +17,7 @@ function makeToken(overrides: Partial<PasswordResetTokenEntity> = {}): PasswordR
     expiresAt: new Date(Date.now() + 86400000), // 24h en el futuro
     createdAt: new Date(),
     ...overrides,
-  } as PasswordResetTokenEntity;
+  };
 }
 
 function makeQueryBuilder(executeResult: { affected: number; raw: unknown[] }) {

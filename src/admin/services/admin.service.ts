@@ -1,4 +1,7 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, UnauthorizedException, Inject } from '@nestjs/common';
+import {
+  Injectable, NotFoundException, ConflictException, BadRequestException,
+  UnauthorizedException, Inject,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -50,21 +53,30 @@ export class AdminService implements IAdminService {
   async updateSelf(id: string, dto: UpdateAdminDto): Promise<AdminResponseDto> {
     const admin = await this.adminRepository.findOne({ where: { id } });
     if (!admin) throw new NotFoundException(`Admin con id ${id} no encontrado.`);
+
+    if (!dto.username && !dto.password) {
+      throw new BadRequestException('No se enviaron cambios para actualizar.');
+    }
+
+    if (!dto.currentPassword) {
+      throw new BadRequestException('Debés ingresar tu contraseña actual para confirmar los cambios.');
+    }
+
+    const passwordValid = await bcrypt.compare(dto.currentPassword, admin.password);
+    if (!passwordValid) {
+      throw new UnauthorizedException('La contraseña actual es incorrecta.');
+    }
+
     if (dto.username && dto.username !== admin.username) {
       const exists = await this.adminRepository.findOne({ where: { username: dto.username } });
       if (exists) throw new ConflictException(`El username "${dto.username}" ya está en uso.`);
       admin.username = dto.username;
     }
+
     if (dto.password) {
-      if (!dto.currentPassword) {
-        throw new BadRequestException('Debés ingresar tu contraseña actual para cambiarla.');
-      }
-      const currentValid = await bcrypt.compare(dto.currentPassword, admin.password);
-      if (!currentValid) {
-        throw new UnauthorizedException('La contraseña actual ingresada es incorrecta.');
-      }
       admin.password = await bcrypt.hash(dto.password, 12);
     }
+
     return this.toDto(await this.adminRepository.save(admin));
   }
 
@@ -78,9 +90,6 @@ export class AdminService implements IAdminService {
     const total = await this.adminRepository.count();
     if (total <= 1) throw new BadRequestException('No se puede eliminar el último administrador del sistema.');
 
-    // Revocamos todos los refresh tokens activos antes de eliminar la cuenta.
-    // El access token vigente puede seguir siendo válido hasta su vencimiento (JWT_ADMIN_ACCESS_EXPIRES_IN).
-    // Se asume este riesgo como aceptable dado el contexto de uso interno del SSO.
     await this.adminRepository.manager.transaction(async (manager) => {
       await this.refreshTokenService.revokeAllForSub(id, manager);
       await manager.remove(admin);

@@ -180,23 +180,66 @@ describe('AdminService', () => {
   });
 
   describe('updateSelf', () => {
-    it('debería actualizar el username sin pedir currentPassword', async () => {
+    it('debería lanzar NotFoundException si el admin no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.updateSelf('no-existe', { username: 'x', currentPassword: 'password123' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('debería lanzar BadRequestException si no se envían cambios', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAdmin());
+      await expect(
+        service.updateSelf('uuid-1', { currentPassword: 'password123' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debería lanzar BadRequestException si no se provee currentPassword', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAdmin());
+      await expect(
+        service.updateSelf('uuid-1', { username: 'nuevo-username' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debería lanzar UnauthorizedException si currentPassword es incorrecta', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAdmin());
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.updateSelf('uuid-1', {
+          username: 'nuevo-username',
+          currentPassword: 'incorrecta',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('debería actualizar el username si currentPassword es correcta', async () => {
       mockRepo.findOne
         .mockResolvedValueOnce(makeAdmin())  // busca el admin por id
         .mockResolvedValueOnce(null);        // username nuevo no existe
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockRepo.save.mockResolvedValue(makeAdmin({ username: 'nuevo-username' }));
 
-      const result = await service.updateSelf('uuid-1', { username: 'nuevo-username' });
+      const result = await service.updateSelf('uuid-1', {
+        username: 'nuevo-username',
+        currentPassword: 'password123',
+      });
+
       expect(result.username).toBe('nuevo-username');
+      expect(bcrypt.compare).toHaveBeenCalledWith('password123', '$2b$12$hashedpassword');
     });
 
     it('debería lanzar ConflictException si el nuevo username ya está en uso', async () => {
       mockRepo.findOne
         .mockResolvedValueOnce(makeAdmin())
         .mockResolvedValueOnce(makeAdmin({ id: 'uuid-2', username: 'otro-admin' }));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       await expect(
-        service.updateSelf('uuid-1', { username: 'otro-admin' }),
+        service.updateSelf('uuid-1', {
+          username: 'otro-admin',
+          currentPassword: 'password123',
+        }),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -213,28 +256,6 @@ describe('AdminService', () => {
 
       expect(bcrypt.hash).toHaveBeenCalledWith('nueva-pass123', 12);
       expect(mockRepo.save).toHaveBeenCalled();
-    });
-
-    it('debería lanzar BadRequestException si se quiere cambiar contraseña sin proveer currentPassword', async () => {
-      mockRepo.findOne.mockResolvedValue(makeAdmin());
-
-      await expect(
-        service.updateSelf('uuid-1', { password: 'nueva-pass123' }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('debería lanzar UnauthorizedException si currentPassword es incorrecta', async () => {
-      mockRepo.findOne.mockResolvedValue(makeAdmin());
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-
-      await expect(
-        service.updateSelf('uuid-1', { currentPassword: 'incorrecta', password: 'nueva-pass123' }),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('debería lanzar NotFoundException si el admin no existe', async () => {
-      mockRepo.findOne.mockResolvedValue(null);
-      await expect(service.updateSelf('no-existe', { username: 'x' })).rejects.toThrow(NotFoundException);
     });
   });
 });

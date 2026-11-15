@@ -49,10 +49,13 @@ export class AdminController implements IAdminController {
 
   @ApiOperation({
     summary: 'Actualizar propio usuario',
-    description: 'Un admin solo puede editar su propio usuario y contraseña.',
+    description: 'Un admin solo puede editar su propio usuario y contraseña confirmando su contraseña actual.',
   })
   @ApiResponse({ status: 200, type: AdminResponseDto })
+  @ApiResponse({ status: 400, description: 'Datos inválidos o sin cambios' })
+  @ApiResponse({ status: 401, description: 'Contraseña actual incorrecta' })
   @ApiResponse({ status: 404, description: 'Admin no encontrado' })
+  @ApiResponse({ status: 409, description: 'Username ya en uso' })
   @Patch('me')
   updateSelf(@Body() dto: UpdateAdminDto, @Request() req: RequestWithAdmin): Promise<AdminResponseDto> {
     return this.adminService.updateSelf(req.admin.sub, dto);

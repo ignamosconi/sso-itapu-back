@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsOptional, MaxLength, Matches, ValidateIf, IsNotEmpty} from 'class-validator';
+import { IsString, MinLength, IsOptional, MaxLength, Matches, ValidateIf, IsNotEmpty } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateAdminDto {
@@ -27,10 +27,10 @@ export class UpdateAdminDto {
 
   @ApiPropertyOptional({
     example: 'password_actual',
-    description: 'Contraseña actual. Requerida solo si se quiere cambiar la contraseña.',
+    description: 'Contraseña actual. Requerida para confirmar cambios de usuario o contraseña.',
   })
-  @ValidateIf((o: UpdateAdminDto) => Boolean(o.password))
-  @IsNotEmpty({ message: 'Debes ingresar tu contraseña actual para establecer una nueva.' })
+  @ValidateIf((o: UpdateAdminDto) => Boolean(o.username || o.password))
+  @IsNotEmpty({ message: 'Debés ingresar tu contraseña actual para confirmar los cambios.' })
   @IsString()
   currentPassword?: string;
 }

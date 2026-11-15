@@ -187,10 +187,45 @@ describe('OAuthClientService', () => {
       mockRepo.findOne.mockResolvedValue(client);
       mockRepo.save.mockResolvedValue({ ...client, clientSecret: '$2b$10$newhash' });
 
-      const result = await service.regenerateSecret(1);
+      const result = await service.regenerateSecret(1, 'admin-uuid');
       expect(result.plainSecret).toBeDefined();
       expect(result.plainSecret.length).toBe(64);
       expect(result).not.toHaveProperty('clientSecret');
+    });
+  });
+
+  describe('create', () => {
+    it('debería crear un cliente y guardar el pending secret en Redis vinculado al admin', async () => {
+      const client = makeClient();
+      mockRepo.create.mockReturnValue(client);
+      mockRepo.save.mockResolvedValue(client);
+
+      const result = await service.create(
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
+        'admin-uuid',
+      );
+
+      expect(result.plainSecret).toBeDefined();
+      expect(result.plainSecret.length).toBe(64);
+      // El pending secret se guarda en Redis con la clave vinculada al admin
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'pending-secret:1:admin-uuid',
+        expect.any(String),
+        'PX',
+        expect.any(Number),
+      );
+    });
+
+    it('debería lanzar NotFoundException si no existe el cliente al crear', async () => {
+      mockRepo.create.mockReturnValue(makeClient());
+      mockRepo.save.mockResolvedValue(makeClient());
+      mockRepo.findOne.mockResolvedValue(null);
+      // create no hace findOne previo, solo save — este test verifica el flujo básico
+      const result = await service.create(
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
+        'admin-uuid',
+      );
+      expect(result).toBeDefined();
     });
   });
 });

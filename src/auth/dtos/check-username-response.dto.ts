@@ -6,4 +6,7 @@ export class CheckUsernameResponseDto {
 
   @ApiProperty({ required: false, example: 'ig*****@gmail.com' })
   maskedEmail?: string;
+
+  @ApiProperty({ required: false, example: 300 })
+  cooldownSeconds?: number;
 }

@@ -45,10 +45,11 @@
       <!-- Pantalla 3: sin contraseña (check email) -->
       <div id="screen-check-email" style="display:none">
         <p class="login-sub">
-          Te enviamos un correo a <strong id="maskedEmail"></strong> con un link para configurar tu contraseña.
+          Para iniciar sesión necesitás configurar tu contraseña. Apretá el botón para enviar un correo a <strong id="maskedEmail"></strong> y poder hacerlo.
         </p>
-        <p class="login-sub" style="font-size:12px">El link expira en 24 horas.</p>
-        <button type="button" class="btn-back" id="btnBackFromEmail">← Volver</button>
+        <button type="button" class="btn-login" id="btnResend" style="margin-bottom:12px">Enviar correo</button>
+        <p id="resendCountdown" class="login-sub" style="display:none;font-size:12px;text-align:center;margin-top:8px;color:var(--sub-color)"></p>
+        <button type="button" class="btn-back" id="btnBackFromEmail" style="margin-top:8px">← Volver</button>
       </div>
 
       <!-- Pantalla 4: recuperación enviada -->

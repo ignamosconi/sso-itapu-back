@@ -5,7 +5,7 @@ jest.mock('bcrypt', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import {
-  UnauthorizedException, NotFoundException, BadRequestException,
+  UnauthorizedException, NotFoundException, BadRequestException, HttpException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -60,6 +60,7 @@ describe('AuthService', () => {
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockPasswordResetTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
+  let mockRedis: jest.Mocked<Record<string, jest.Mock>>;
   let mockJwtService: jest.Mocked<Partial<JwtService>>;
 
   beforeEach(async () => {
@@ -98,6 +99,11 @@ describe('AuthService', () => {
       send: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockRedis = {
+      ttl: jest.fn().mockResolvedValue(-2), // -2 = clave inexistente → sin cooldown activo
+      set: jest.fn().mockResolvedValue('OK'),
+    };
+
     mockJwtService = {
       signAsync: jest.fn().mockResolvedValue('signed-jwt'),
       verifyAsync: jest.fn(),
@@ -113,6 +119,7 @@ describe('AuthService', () => {
         { provide: 'IStudentService', useValue: mockStudentService },
         { provide: 'IPasswordResetTokenService', useValue: mockPasswordResetTokenService },
         { provide: 'IMailService', useValue: mockMailService },
+        { provide: 'REDIS_CLIENT', useValue: mockRedis },
         {
           provide: ConfigService,
           useValue: {
@@ -193,14 +200,26 @@ describe('AuthService', () => {
       expect(result.maskedEmail).toBeUndefined();
     });
 
-    it('debería retornar no_password y enviar email si la cuenta no tiene contraseña', async () => {
+    it('debería retornar no_password con cooldownSeconds: 0 si no hay cooldown activo', async () => {
       mockStudentService.findForAuth.mockResolvedValue(
         makeStudent({ password: null, account_status: 'pending_registration' }),
       );
+      mockRedis.ttl.mockResolvedValue(-2);
       const result = await service.checkUsername({ username: 'immosconi136' });
       expect(result.status).toBe('no_password');
       expect(result.maskedEmail).toBeDefined();
-      expect(mockPasswordResetTokenService.generate).toHaveBeenCalledWith('student-uuid', 'setup');
+      expect(result.cooldownSeconds).toBe(0);
+      expect(mockPasswordResetTokenService.generate).not.toHaveBeenCalled();
+    });
+
+    it('debería retornar no_password con cooldownSeconds restante si hay cooldown activo', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(
+        makeStudent({ password: null, account_status: 'pending_registration' }),
+      );
+      mockRedis.ttl.mockResolvedValue(180);
+      const result = await service.checkUsername({ username: 'immosconi136' });
+      expect(result.status).toBe('no_password');
+      expect(result.cooldownSeconds).toBe(180);
     });
 
     it('debería lanzar NotFoundException si el usuario no existe', async () => {
@@ -448,6 +467,58 @@ describe('AuthService', () => {
     it('debería revocar la familia del refresh token', async () => {
       await service.logout({ refresh_token: 'some-token' });
       expect(mockRefreshTokenService.revokeFamily).toHaveBeenCalledWith('some-token');
+    });
+  });
+
+  // ── resendSetupEmail ────────────────────────────────────────────────────────
+  describe('resendSetupEmail', () => {
+    it('debería enviar el mail y retornar cooldownSeconds: 300 si no hay cooldown activo', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(
+        makeStudent({ password: null, account_status: 'pending_registration' }),
+      );
+      mockRedis.ttl.mockResolvedValue(-2);
+
+      const result = await service.resendSetupEmail({ username: 'immosconi136' });
+
+      expect(result.cooldownSeconds).toBe(300);
+      expect(mockPasswordResetTokenService.generate).toHaveBeenCalledWith('student-uuid', 'setup');
+      expect(mockMailService.send).toHaveBeenCalled();
+      expect(mockRedis.set).toHaveBeenCalledWith('sso:setup-cooldown:student-uuid', '1', 'EX', 300);
+    });
+
+    it('debería lanzar HttpException 429 con retryAfter si el cooldown está activo', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(
+        makeStudent({ password: null, account_status: 'pending_registration' }),
+      );
+      mockRedis.ttl.mockResolvedValue(180);
+
+      let caughtError: unknown;
+      try {
+        await service.resendSetupEmail({ username: 'immosconi136' });
+      } catch (e) {
+        caughtError = e;
+      }
+      expect(caughtError).toBeInstanceOf(HttpException);
+      expect((caughtError as HttpException).getStatus()).toBe(429);
+      expect((caughtError as HttpException).getResponse()).toMatchObject({ retryAfter: 180 });
+    });
+
+    it('debería lanzar NotFoundException si el usuario no existe', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(null);
+      await expect(service.resendSetupEmail({ username: 'noexiste' }))
+        .rejects.toThrow(NotFoundException);
+    });
+
+    it('debería lanzar UnauthorizedException si la cuenta está suspendida', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ account_status: 'suspended' }));
+      await expect(service.resendSetupEmail({ username: 'immosconi136' }))
+        .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('debería lanzar BadRequestException si la cuenta ya tiene contraseña configurada', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
+      await expect(service.resendSetupEmail({ username: 'immosconi136' }))
+        .rejects.toThrow(BadRequestException);
     });
   });
 

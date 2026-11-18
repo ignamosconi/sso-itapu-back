@@ -1,5 +1,5 @@
 import {
-  Injectable, BadRequestException, UnauthorizedException,
+  Injectable, BadRequestException, UnauthorizedException, HttpException,
   NotFoundException, Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +13,9 @@ import type { IRefreshTokenService } from '../../refresh-token/services/refresh-
 import type { IStudentService } from '../../student/services/student.service.interface.js';
 import type { IPasswordResetTokenService } from '../../password-reset-token/services/password-reset-token.service.interface.js';
 import type { IMailService } from 'src/mail/services/mail.service.interface.js';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../redis/redis.module.js';
+import { ResendSetupEmailRequestDto } from '../dtos/resend-setup-email-request.dto.js';
 import { LoginRequestDto } from '../dtos/login-request.dto.js';
 import { AuthorizationCodeRequestDto } from '../dtos/authorization-code-request.dto.js';
 import { RefreshRequestDto } from '../dtos/refresh-request.dto.js';
@@ -51,6 +54,8 @@ export class AuthService implements IAuthService {
     private readonly passwordResetTokenService: IPasswordResetTokenService,
     @Inject('IMailService')
     private readonly mailService: IMailService,
+    @Inject(REDIS_CLIENT)
+    private readonly redis: Redis,
   ) {
     this.accessSecret = this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
     this.refreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
@@ -115,7 +120,6 @@ export class AuthService implements IAuthService {
   }
 
   // ── Nuevos endpoints públicos ─────────────────────────────────────────────
-
   async checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto> {
     const student = await this.studentService.findForAuth(dto.username);
     if (!student) throw new NotFoundException('Usuario no encontrado.');
@@ -124,26 +128,52 @@ export class AuthService implements IAuthService {
     }
 
     if (!student.password) {
-      // Generar y enviar email de setup automáticamente
-      const token = await this.passwordResetTokenService.generate(student.id, 'setup');
-      const link = `${this.adminPanelUrl}/set-password?token=${token}`;
-      void this.mailService.send(
-        student.email,
-        'Configurá tu contraseña — ITAPU',
-        { html:
-          `
-          <p>Hola <strong>${student.first_name}</strong>,</p>
-          <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
-          <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-          <p>Hacé clic aquí (válido por 24 horas):</p>
-          <p><a href="${link}">${link}</a></p>
-          `,
-        }
-      );
-      return { status: 'no_password', maskedEmail: this.maskEmail(student.email) };
+      const cooldownKey = `sso:setup-cooldown:${student.id}`;
+      const existingTtl = await this.redis.ttl(cooldownKey);
+
+      return {
+        status: 'no_password',
+        maskedEmail: this.maskEmail(student.email),
+        cooldownSeconds: existingTtl > 0 ? existingTtl : 0,
+      };
     }
 
     return { status: 'has_password' };
+  }
+
+  async resendSetupEmail(dto: ResendSetupEmailRequestDto): Promise<{ cooldownSeconds: number }> {
+    const student = await this.studentService.findForAuth(dto.username);
+    if (!student) throw new NotFoundException('Usuario no encontrado.');
+    if (student.account_status === 'suspended') {
+      throw new UnauthorizedException('Tu cuenta está suspendida. Contactá a un administrador.');
+    }
+    if (student.password) {
+      throw new BadRequestException('Esta cuenta ya tiene contraseña configurada.');
+    }
+
+    const cooldownKey = `sso:setup-cooldown:${student.id}`;
+    const ttl = await this.redis.ttl(cooldownKey);
+    if (ttl > 0) {
+      throw new HttpException({ message: 'Esperá antes de reenviar el correo.', retryAfter: ttl }, 429);
+    }
+
+    const token = await this.passwordResetTokenService.generate(student.id, 'setup');
+    const link = `${this.adminPanelUrl}/set-password?token=${token}`;
+    void this.mailService.send(
+      student.email,
+      'Configurá tu contraseña — ITAPU',
+      {
+        html: `
+        <p>Hola <strong>${student.first_name}</strong>,</p>
+        <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
+        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
+        <p>Hacé clic aquí (válido por 24 horas):</p>
+        <p><a href="${link}">${link}</a></p>
+        `,
+      },
+    );
+    await this.redis.set(cooldownKey, '1', 'EX', 300);
+    return { cooldownSeconds: 300 };
   }
 
   async requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<void> {

@@ -11,6 +11,7 @@ import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js
 import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
 import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
 import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
+import { ResendSetupEmailRequestDto } from '../dtos/resend-setup-email-request.dto.js';
 
 export interface IAuthService {
   validateAndGetUserInfo(loginDto: LoginRequestDto): Promise<UserInfoOauthDto>;
@@ -23,4 +24,5 @@ export interface IAuthService {
   requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<void>;
   validatePasswordResetToken(dto: ValidateResetTokenRequestDto): Promise<void>;
   setPassword(dto: SetPasswordRequestDto): Promise<void>;
+  resendSetupEmail(dto: ResendSetupEmailRequestDto): Promise<{ cooldownSeconds: number }>;
 }

@@ -188,9 +188,14 @@ describe('OAuthClientService', () => {
       mockRepo.save.mockResolvedValue({ ...client, clientSecret: '$2b$10$newhash' });
 
       const result = await service.regenerateSecret(1, 'admin-uuid');
-      expect(result.plainSecret).toBeDefined();
-      expect(result.plainSecret.length).toBe(64);
+      expect(result).not.toHaveProperty('plainSecret');
       expect(result).not.toHaveProperty('clientSecret');
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'pending-secret:1:admin-uuid',
+        expect.any(String),
+        'PX',
+        expect.any(Number),
+      );
     });
   });
 
@@ -205,8 +210,7 @@ describe('OAuthClientService', () => {
         'admin-uuid',
       );
 
-      expect(result.plainSecret).toBeDefined();
-      expect(result.plainSecret.length).toBe(64);
+      expect(result).not.toHaveProperty('plainSecret');
       // El pending secret se guarda en Redis con la clave vinculada al admin
       expect(mockRedis.set).toHaveBeenCalledWith(
         'pending-secret:1:admin-uuid',

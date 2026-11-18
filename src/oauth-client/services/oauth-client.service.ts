@@ -74,12 +74,11 @@ export class OAuthClientService implements IOAuthClientService {
   }
 
   // Mapea entidad + plain secret al DTO de creación/regeneración
-  private toCreatedResponseDto(entity: OAuthClientEntity, plainSecret: string): OAuthClientCreatedResponseDto {
+  private toCreatedResponseDto(entity: OAuthClientEntity): OAuthClientCreatedResponseDto {
     return {
       id: entity.id,
       clientName: entity.clientName,
       redirectUris: entity.redirectUris,
-      plainSecret,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
@@ -120,7 +119,7 @@ export class OAuthClientService implements IOAuthClientService {
     // Guardar el secret en Redis para que send-credentials lo recupere sin
     // que el frontend tenga que reenviarlo.
     await this.storePendingSecret(saved.id, plainSecret, adminId);
-    return this.toCreatedResponseDto(saved, plainSecret);
+    return this.toCreatedResponseDto(saved);
   }
 
   async update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto> {
@@ -152,7 +151,7 @@ export class OAuthClientService implements IOAuthClientService {
     const saved = await this.clientRepository.save(client);
     // Sobrescribir el secret anterior en Redis si existía.
     await this.storePendingSecret(saved.id, plainSecret, adminId);
-    return this.toCreatedResponseDto(saved, plainSecret);
+    return this.toCreatedResponseDto(saved);
   }
 
   async sendCredentialsByEmail(id: number, to: string, adminId: string): Promise<void> {

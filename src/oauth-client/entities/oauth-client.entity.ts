@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { StudentEntity } from '../../student/entities/student.entity.js';
 
 @Entity('oauth_clients')
 export class OAuthClientEntity {
@@ -16,6 +17,13 @@ export class OAuthClientEntity {
 
   @Column({ default: true })
   isActive!: boolean;
+
+  @ManyToOne(() => StudentEntity, { nullable: true, eager: true })
+  @JoinColumn({ name: 'responsible_user_id' })
+  responsibleUser!: StudentEntity | null;
+
+  @Column({ name: 'responsible_user_id', nullable: true, type: 'varchar' })
+  responsibleUserId!: string | null;
 
   @CreateDateColumn()
   createdAt!: Date;

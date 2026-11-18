@@ -7,7 +7,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import type { IStudentService } from './student.service.interface.js';
 import type { IPasswordResetTokenService } from '../../password-reset-token/services/password-reset-token.service.interface.js';
-import type { IMailService } from 'src/mail/services/mail.service.interface.js';
+import type { IMailService } from '../../mail/services/mail.service.interface.js';
 import { StudentEntity, AccountStatus } from '../entities/student.entity.js';
 import { DomainRoleEntity } from '../../domain-role/entities/domain-role.entity.js';
 import { SpecialtyEntity } from '../../specialty/entities/specialty.entity.js';

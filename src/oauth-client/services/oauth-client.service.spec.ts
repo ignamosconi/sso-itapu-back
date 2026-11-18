@@ -19,6 +19,8 @@ function makeClient(overrides: Partial<OAuthClientEntity> = {}): OAuthClientEnti
     redirectUris: ['https://app.com/callback'],
     clientSecret: '$2b$10$hashedsecret',
     isActive: true,
+    responsibleUser: null,
+    responsibleUserId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -32,6 +34,7 @@ describe('OAuthClientService', () => {
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRedis: jest.Mocked<Record<string, jest.Mock>>;
   let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
+  let mockStudentService: jest.Mocked<Record<string, jest.Mock>>;
 
   beforeEach(async () => {
     mockRepo = {
@@ -40,6 +43,7 @@ describe('OAuthClientService', () => {
       create: jest.fn(),
       save: jest.fn(),
       remove: jest.fn(),
+      findOneOrFail: jest.fn(),
     };
 
     mockCredentialTokenService = {
@@ -55,6 +59,17 @@ describe('OAuthClientService', () => {
       getdel: jest.fn().mockResolvedValue(null),
     };
 
+    mockStudentService = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'student-uuid',
+        username: 'jdoe',
+        first_name: 'John',
+        last_name: 'Doe',
+        email: 'jdoe@example.com',
+        account_status: 'active',
+      }),
+    };
+
     mockMailService = {
       send: jest.fn().mockResolvedValue(undefined),
     };
@@ -67,6 +82,7 @@ describe('OAuthClientService', () => {
         { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
         { provide: REDIS_CLIENT, useValue: mockRedis },
         { provide: 'IMailService', useValue: mockMailService },
+        { provide: 'IStudentService', useValue: mockStudentService },
         {
           provide: ConfigService,
           useValue: {
@@ -204,9 +220,10 @@ describe('OAuthClientService', () => {
       const client = makeClient();
       mockRepo.create.mockReturnValue(client);
       mockRepo.save.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUser: null });
 
       const result = await service.create(
-        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
         'admin-uuid',
       );
 
@@ -223,10 +240,11 @@ describe('OAuthClientService', () => {
     it('debería lanzar NotFoundException si no existe el cliente al crear', async () => {
       mockRepo.create.mockReturnValue(makeClient());
       mockRepo.save.mockResolvedValue(makeClient());
+      mockRepo.findOneOrFail.mockResolvedValue(makeClient());
       mockRepo.findOne.mockResolvedValue(null);
       // create no hace findOne previo, solo save — este test verifica el flujo básico
       const result = await service.create(
-        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
         'admin-uuid',
       );
       expect(result).toBeDefined();

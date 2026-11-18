@@ -20,6 +20,7 @@ import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js
 import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
 import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
 import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
+import { ResendSetupEmailRequestDto } from '../dtos/resend-setup-email-request.dto.js';
 
 @ApiTags('SSO — Alumnos')
 @Controller(process.env.AUTH_ROUTE_PATH || 'oauth')
@@ -150,6 +151,19 @@ export class AuthController implements IAuthController {
   @Post('set-password')
   async setPassword(@Body() dto: SetPasswordRequestDto): Promise<void> {
     return this.authService.setPassword(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Reenviar correo de configuración de contraseña',
+    description: 'Reenvía el email de setup para cuentas sin contraseña. Tiene un cooldown global de 5 minutos por cuenta.',
+  })
+  @ApiResponse({ status: 200, description: 'Email reenviado. Devuelve cooldownSeconds.' })
+  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 429, description: 'Cooldown activo, incluye retryAfter en segundos' })
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Post('resend-setup-email')
+  async resendSetupEmail(@Body() dto: ResendSetupEmailRequestDto): Promise<{ cooldownSeconds: number }> {
+    return this.authService.resendSetupEmail(dto);
   }
 
 }

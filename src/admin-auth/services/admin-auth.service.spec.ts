@@ -161,15 +161,68 @@ describe('AdminAuthService', () => {
 
     it('debería lanzar UnauthorizedException si el admin no tiene 2FA configurado', async () => {
       mockJwtService.verifyAsync = jest.fn().mockResolvedValue({
-        sub: 'admin-uuid',
-        jti: 'test-jti',
-        purpose: '2fa-confirm',
-        type: 'pending-2fa',
+        sub: 'admin-uuid', jti: 'test-jti', purpose: '2fa-confirm', type: 'pending-2fa',
       });
       mockRepo.findOne.mockResolvedValue(makeAdmin({ totpEnabled: false }));
-
       await expect(service.validate2fa({ pending_token: 'valid', totp_code: '123456' }))
         .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('debería lanzar UnauthorizedException si el código TOTP es incorrecto', async () => {
+      const encryptedSecret = (service as unknown as Record<string, (s: string) => string>)
+        .encryptTotp('JBSWY3DPEHPK3PXP');
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({
+        sub: 'admin-uuid', jti: 'test-jti', purpose: '2fa-confirm', type: 'pending-2fa',
+      });
+      mockRepo.findOne.mockResolvedValue(makeAdmin({ totpEnabled: true, totpSecret: encryptedSecret }));
+      (authenticator.verify as jest.Mock).mockReturnValue(false);
+      mockPendingChallengeService.recordAttempt.mockResolvedValue({ ok: false, reason: 'not_found' });
+
+      await expect(service.validate2fa({ pending_token: 'p', totp_code: '000000' }))
+        .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('debería lanzar ServiceUnavailableException si Redis no está disponible (validate2fa)', async () => {
+      const encryptedSecret = (service as unknown as Record<string, (s: string) => string>)
+        .encryptTotp('JBSWY3DPEHPK3PXP');
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({
+        sub: 'admin-uuid', jti: 'test-jti', purpose: '2fa-confirm', type: 'pending-2fa',
+      });
+      mockRepo.findOne.mockResolvedValue(makeAdmin({ totpEnabled: true, totpSecret: encryptedSecret }));
+      (authenticator.verify as jest.Mock).mockReturnValue(false);
+      mockPendingChallengeService.recordAttempt.mockResolvedValue({ ok: false, reason: 'redis_unavailable' });
+
+      const { ServiceUnavailableException } = await import('@nestjs/common');
+      await expect(service.validate2fa({ pending_token: 'p', totp_code: '000000' }))
+        .rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('debería lanzar UnauthorizedException por max_attempts (validate2fa)', async () => {
+      const encryptedSecret = (service as unknown as Record<string, (s: string) => string>)
+        .encryptTotp('JBSWY3DPEHPK3PXP');
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({
+        sub: 'admin-uuid', jti: 'test-jti', purpose: '2fa-confirm', type: 'pending-2fa',
+      });
+      mockRepo.findOne.mockResolvedValue(makeAdmin({ totpEnabled: true, totpSecret: encryptedSecret }));
+      (authenticator.verify as jest.Mock).mockReturnValue(false);
+      mockPendingChallengeService.recordAttempt.mockResolvedValue({ ok: false, reason: 'max_attempts' });
+
+      await expect(service.validate2fa({ pending_token: 'p', totp_code: '000000' }))
+        .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('debería emitir tokens si el código TOTP es correcto', async () => {
+      const encryptedSecret = (service as unknown as Record<string, (s: string) => string>)
+        .encryptTotp('JBSWY3DPEHPK3PXP');
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({
+        sub: 'admin-uuid', jti: 'test-jti', purpose: '2fa-confirm', type: 'pending-2fa',
+      });
+      mockRepo.findOne.mockResolvedValue(makeAdmin({ totpEnabled: true, totpSecret: encryptedSecret }));
+      (authenticator.verify as jest.Mock).mockReturnValue(true);
+      mockPendingChallengeService.recordAttempt.mockResolvedValue({ ok: true });
+
+      const result = await service.validate2fa({ pending_token: 'pending', totp_code: '123456' });
+      expect(result.access_token).toBeDefined();
     });
   });
 
@@ -256,6 +309,35 @@ describe('AdminAuthService', () => {
         .rejects.toThrow(UnauthorizedException);
     });
 
+        it('debería lanzar ServiceUnavailableException si Redis no está disponible (confirm2fa)', async () => {
+      const encryptedSecret = (service as unknown as Record<string, (s: string) => string>)
+        .encryptTotp('JBSWY3DPEHPK3PXP');
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({
+        sub: 'admin-uuid', jti: 'test-jti', purpose: '2fa-confirm', type: 'pending-2fa',
+      });
+      mockRepo.findOne.mockResolvedValue(makeAdmin({ totpSecret: encryptedSecret }));
+      (authenticator.verify as jest.Mock).mockReturnValue(false);
+      mockPendingChallengeService.recordAttempt.mockResolvedValue({ ok: false, reason: 'redis_unavailable' });
+
+      const { ServiceUnavailableException } = await import('@nestjs/common');
+      await expect(service.confirm2fa({ pending_token: 'p', totp_code: '000000' }))
+        .rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('debería lanzar UnauthorizedException por max_attempts (confirm2fa)', async () => {
+      const encryptedSecret = (service as unknown as Record<string, (s: string) => string>)
+        .encryptTotp('JBSWY3DPEHPK3PXP');
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({
+        sub: 'admin-uuid', jti: 'test-jti', purpose: '2fa-confirm', type: 'pending-2fa',
+      });
+      mockRepo.findOne.mockResolvedValue(makeAdmin({ totpSecret: encryptedSecret }));
+      (authenticator.verify as jest.Mock).mockReturnValue(false);
+      mockPendingChallengeService.recordAttempt.mockResolvedValue({ ok: false, reason: 'max_attempts' });
+
+      await expect(service.confirm2fa({ pending_token: 'p', totp_code: '000000' }))
+        .rejects.toThrow(UnauthorizedException);
+    });
+
     it('debería lanzar UnauthorizedException si el pending_token es inválido', async () => {
       mockJwtService.verifyAsync = jest.fn().mockRejectedValue(new Error('invalid'));
       await expect(service.confirm2fa({ pending_token: 'bad', totp_code: '123456' }))
@@ -316,6 +398,15 @@ describe('AdminAuthService', () => {
     it('debería lanzar UnauthorizedException si el token no es de tipo refresh', async () => {
       mockJwtService.verifyAsync = jest.fn().mockResolvedValue({ sub: 'admin-uuid', type: 'access' });
       await expect(service.refresh({ refresh_token: 'access-token' }))
+        .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('debería lanzar UnauthorizedException si el admin no existe en la DB al hacer refresh', async () => {
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({ sub: 'deleted-admin', type: 'refresh' });
+      mockRefreshTokenService.consume.mockResolvedValue({ familyId: 'family-uuid' });
+      mockRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.refresh({ refresh_token: 'valid-refresh' }))
         .rejects.toThrow(UnauthorizedException);
     });
 

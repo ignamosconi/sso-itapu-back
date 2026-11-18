@@ -4,6 +4,7 @@
   const redirectUri = params.get('redirect_uri');
   const state = params.get('state') || '';
   let currentUsername = '';
+  let resendInterval = null;
 
   // ── Helpers de UI ────────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@
         showScreen('screen-password');
       } else {
         document.getElementById('maskedEmail').textContent = data.maskedEmail;
+        startResendCooldown(data.cooldownSeconds ?? 300);
         showScreen('screen-check-email');
       }
     } catch {
@@ -138,6 +140,63 @@
 
   document.getElementById('passwordInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('btnLogin').click();
+  });
+
+  // ── Reenviar correo de setup ──────────────────────────────────────────────
+  function startResendCooldown(seconds) {
+    const btn = document.getElementById('btnResend');
+    const countdown = document.getElementById('resendCountdown');
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    let remaining = seconds;
+
+    function tick() {
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      countdown.textContent = `Podés reenviarlo en ${m}:${String(s).padStart(2, '0')}`;
+      countdown.style.display = '';
+      remaining--;
+      if (remaining < 0) {
+        clearInterval(resendInterval);
+        resendInterval = null;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        countdown.style.display = 'none';
+      }
+    }
+
+    clearInterval(resendInterval);
+    tick();
+    resendInterval = setInterval(tick, 1000);
+  }
+
+  document.getElementById('btnResend').addEventListener('click', async () => {
+    const btn = document.getElementById('btnResend');
+    hideError();
+    setLoading(btn, true);
+    try {
+      const route = window.location.pathname.replace('/login', '/resend-setup-email');
+      const res = await fetch(route, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUsername }),
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        startResendCooldown(data.retryAfter ?? 300);
+        return;
+      }
+      if (!res.ok) {
+        showError(data.message || 'Error al reenviar el correo.');
+        return;
+      }
+      startResendCooldown(data.cooldownSeconds ?? 300);
+    } catch {
+      showError('Error de red. Intentá de nuevo.');
+    } finally {
+      setLoading(btn, false);
+    }
   });
 
   // ── Olvidé mi contraseña ──────────────────────────────────────────────────

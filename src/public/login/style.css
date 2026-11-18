@@ -199,8 +199,12 @@ body {
   transition: background 0.15s;
 }
 
-.btn-login:hover { 
+.btn-login:hover:not(:disabled) { 
   background: #e0b000; 
+}
+
+.btn-login:disabled {
+  cursor: not-allowed;
 }
 
 .error-msg {

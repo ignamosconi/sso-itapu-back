@@ -200,14 +200,26 @@ describe('AuthService', () => {
       expect(result.maskedEmail).toBeUndefined();
     });
 
-    it('debería retornar no_password y enviar email si la cuenta no tiene contraseña', async () => {
+    it('debería retornar no_password con cooldownSeconds: 0 si no hay cooldown activo', async () => {
       mockStudentService.findForAuth.mockResolvedValue(
         makeStudent({ password: null, account_status: 'pending_registration' }),
       );
+      mockRedis.ttl.mockResolvedValue(-2);
       const result = await service.checkUsername({ username: 'immosconi136' });
       expect(result.status).toBe('no_password');
       expect(result.maskedEmail).toBeDefined();
-      expect(mockPasswordResetTokenService.generate).toHaveBeenCalledWith('student-uuid', 'setup');
+      expect(result.cooldownSeconds).toBe(0);
+      expect(mockPasswordResetTokenService.generate).not.toHaveBeenCalled();
+    });
+
+    it('debería retornar no_password con cooldownSeconds restante si hay cooldown activo', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(
+        makeStudent({ password: null, account_status: 'pending_registration' }),
+      );
+      mockRedis.ttl.mockResolvedValue(180);
+      const result = await service.checkUsername({ username: 'immosconi136' });
+      expect(result.status).toBe('no_password');
+      expect(result.cooldownSeconds).toBe(180);
     });
 
     it('debería lanzar NotFoundException si el usuario no existe', async () => {

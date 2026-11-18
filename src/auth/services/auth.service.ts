@@ -120,8 +120,7 @@ export class AuthService implements IAuthService {
   }
 
   // ── Nuevos endpoints públicos ─────────────────────────────────────────────
-
-    async checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto> {
+  async checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto> {
     const student = await this.studentService.findForAuth(dto.username);
     if (!student) throw new NotFoundException('Usuario no encontrado.');
     if (student.account_status === 'suspended') {
@@ -132,28 +131,11 @@ export class AuthService implements IAuthService {
       const cooldownKey = `sso:setup-cooldown:${student.id}`;
       const existingTtl = await this.redis.ttl(cooldownKey);
 
-      if (existingTtl > 0) {
-        // Ya hay un email válido enviado recientemente; no enviamos otro
-        return { status: 'no_password', maskedEmail: this.maskEmail(student.email), cooldownSeconds: existingTtl };
-      }
-
-      const token = await this.passwordResetTokenService.generate(student.id, 'setup');
-      const link = `${this.adminPanelUrl}/set-password?token=${token}`;
-      void this.mailService.send(
-        student.email,
-        'Configurá tu contraseña — ITAPU',
-        {
-          html: `
-          <p>Hola <strong>${student.first_name}</strong>,</p>
-          <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
-          <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-          <p>Hacé clic aquí (válido por 24 horas):</p>
-          <p><a href="${link}">${link}</a></p>
-          `,
-        },
-      );
-      await this.redis.set(cooldownKey, '1', 'EX', 300);
-      return { status: 'no_password', maskedEmail: this.maskEmail(student.email), cooldownSeconds: 300 };
+      return {
+        status: 'no_password',
+        maskedEmail: this.maskEmail(student.email),
+        cooldownSeconds: existingTtl > 0 ? existingTtl : 0,
+      };
     }
 
     return { status: 'has_password' };

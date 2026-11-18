@@ -96,7 +96,9 @@
         showScreen('screen-password');
       } else {
         document.getElementById('maskedEmail').textContent = data.maskedEmail;
-        startResendCooldown(data.cooldownSeconds ?? 300);
+        if (data.cooldownSeconds > 0) {
+          startResendCooldown(data.cooldownSeconds);
+        }
         showScreen('screen-check-email');
       }
     } catch {
@@ -161,6 +163,7 @@
         resendInterval = null;
         btn.disabled = false;
         btn.style.opacity = '1';
+        btn.textContent = 'Reenviar correo';
         countdown.style.display = 'none';
       }
     }
@@ -188,14 +191,19 @@
         return;
       }
       if (!res.ok) {
-        showError(data.message || 'Error al reenviar el correo.');
+        showError(data.message || 'Error al enviar el correo.');
         return;
       }
+      btn.textContent = 'Reenviar correo';
       startResendCooldown(data.cooldownSeconds ?? 300);
     } catch {
       showError('Error de red. Intentá de nuevo.');
     } finally {
-      setLoading(btn, false);
+      if (btn.disabled) {
+        btn.style.opacity = '0.5';
+      } else {
+        setLoading(btn, false);
+      }
     }
   });
 

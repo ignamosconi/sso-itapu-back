@@ -14,6 +14,8 @@ import { StudentService } from './student.service.js';
 import { StudentEntity, AccountStatus } from '../entities/student.entity.js';
 import { DomainRoleEntity } from '../../domain-role/entities/domain-role.entity.js';
 import { SpecialtyEntity } from '../../specialty/entities/specialty.entity.js';
+import { OAuthClientEntity } from '../../oauth-client/entities/oauth-client.entity.js';
+import { HttpException } from '@nestjs/common';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,6 +71,8 @@ describe('StudentService', () => {
   let mockSpecialtyRepo: jest.Mocked<Record<string, jest.Mock>>;
   let mockPasswordResetTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
+  let mockOauthClientRepo: jest.Mocked<Record<string, jest.Mock>>;
+  let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -83,7 +87,7 @@ describe('StudentService', () => {
       manager: {
         transaction: jest.fn(),
         save: jest.fn(),
-      },
+      } as unknown as jest.Mock,
     };
 
     mockDomainRoleRepo = {
@@ -104,6 +108,15 @@ describe('StudentService', () => {
       send: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockOauthClientRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      save: jest.fn().mockImplementation(entity => Promise.resolve(entity)),
+    };
+
+    mockRefreshTokenService = {
+      revokeAllForClient: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StudentService,
@@ -112,6 +125,8 @@ describe('StudentService', () => {
         { provide: getRepositoryToken(SpecialtyEntity), useValue: mockSpecialtyRepo },
         { provide: 'IPasswordResetTokenService', useValue: mockPasswordResetTokenService },
         { provide: 'IMailService', useValue: mockMailService },
+        { provide: getRepositoryToken(OAuthClientEntity), useValue: mockOauthClientRepo },
+        { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
         {
           provide: ConfigService,
           useValue: {
@@ -303,6 +318,7 @@ describe('StudentService', () => {
   describe('remove', () => {
     it('debería eliminar el alumno sin pedir contraseña si no tiene ninguna', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent({ password: null }));
+      mockOauthClientRepo.find.mockResolvedValue([]);
       mockRepo.remove.mockResolvedValue({});
 
       await service.remove('student-uuid', {});
@@ -311,6 +327,7 @@ describe('StudentService', () => {
 
     it('debería eliminar el alumno si la contraseña es correcta', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockRepo.remove.mockResolvedValue({});
 
@@ -318,14 +335,36 @@ describe('StudentService', () => {
       expect(mockRepo.remove).toHaveBeenCalled();
     });
 
+    it('debería lanzar HttpException 409 si el usuario es responsable de apps', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ password: null }));
+      mockOauthClientRepo.find.mockResolvedValue([
+        { id: 10, clientName: 'App1' },
+        { id: 20, clientName: 'App2' },
+      ]);
+
+      try {
+        await service.remove('student-uuid', {});
+        fail('Debería haber lanzado HttpException');
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpException);
+        const httpErr = err as HttpException;
+        expect(httpErr.getStatus()).toBe(409);
+        const body = httpErr.getResponse() as { responsibleApps: { id: number; clientName: string }[] };
+        expect(body.responsibleApps).toHaveLength(2);
+        expect(body.responsibleApps[0]).toEqual({ id: 10, clientName: 'App1' });
+      }
+    });
+
     it('debería lanzar BadRequestException si tiene contraseña pero no se proporcionó', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
 
       await expect(service.remove('student-uuid', {})).rejects.toThrow(BadRequestException);
     });
 
     it('debería lanzar UnauthorizedException si la contraseña es incorrecta', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(service.remove('student-uuid', { password: 'incorrecta' }))
@@ -345,9 +384,29 @@ describe('StudentService', () => {
       const entity = makeStudent({ account_status: AccountStatus.Active });
       mockRepo.findOne.mockResolvedValue(entity);
       mockRepo.save.mockResolvedValue({ ...entity, account_status: AccountStatus.Suspended });
+      mockOauthClientRepo.find.mockResolvedValue([]);
 
       const result = await service.suspend('student-uuid');
       expect(result.account_status).toBe(AccountStatus.Suspended);
+    });
+
+    it('debería cascade-suspender apps activas y revocar sus sesiones', async () => {
+      const entity = makeStudent({ account_status: AccountStatus.Active });
+      mockRepo.findOne.mockResolvedValue(entity);
+      mockRepo.save.mockResolvedValue({ ...entity, account_status: AccountStatus.Suspended });
+
+      const app1 = { id: 10, clientName: 'App1', isActive: true, responsibleUserId: 'student-uuid' };
+      const app2 = { id: 20, clientName: 'App2', isActive: false, responsibleUserId: 'student-uuid' };
+      mockOauthClientRepo.find.mockResolvedValue([app1, app2]);
+
+      await service.suspend('student-uuid');
+
+      // Solo app1 estaba activa → se revoca y se suspende
+      expect(mockRefreshTokenService.revokeAllForClient).toHaveBeenCalledTimes(1);
+      expect(mockRefreshTokenService.revokeAllForClient).toHaveBeenCalledWith(10);
+      expect(mockOauthClientRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 10, isActive: false }));
+      // app2 ya estaba suspendida → no se toca
+      expect(mockOauthClientRepo.save).not.toHaveBeenCalledWith(expect.objectContaining({ id: 20 }));
     });
 
     it('debería lanzar BadRequestException si el alumno ya está suspendido', async () => {
@@ -368,6 +427,7 @@ describe('StudentService', () => {
       const entity = makeStudent({ account_status: AccountStatus.Suspended, password: '$2b$10$hashed' });
       mockRepo.findOne.mockResolvedValue(entity);
       mockRepo.save.mockResolvedValue({ ...entity, account_status: AccountStatus.Active });
+      mockOauthClientRepo.find.mockResolvedValue([]);
 
       const result = await service.activate('student-uuid');
       expect(result.account_status).toBe(AccountStatus.Active);
@@ -377,9 +437,27 @@ describe('StudentService', () => {
       const entity = makeStudent({ account_status: AccountStatus.Suspended, password: null });
       mockRepo.findOne.mockResolvedValue(entity);
       mockRepo.save.mockResolvedValue({ ...entity, account_status: AccountStatus.PendingRegistration });
+      mockOauthClientRepo.find.mockResolvedValue([]);
 
       const result = await service.activate('student-uuid');
       expect(result.account_status).toBe(AccountStatus.PendingRegistration);
+    });
+
+    it('debería cascade-reactivar apps suspendidas del usuario', async () => {
+      const entity = makeStudent({ account_status: AccountStatus.Suspended, password: '$2b$10$hashed' });
+      mockRepo.findOne.mockResolvedValue(entity);
+      mockRepo.save.mockResolvedValue({ ...entity, account_status: AccountStatus.Active });
+
+      const app1 = { id: 10, clientName: 'App1', isActive: false, responsibleUserId: 'student-uuid' };
+      const app2 = { id: 20, clientName: 'App2', isActive: true, responsibleUserId: 'student-uuid' };
+      mockOauthClientRepo.find.mockResolvedValue([app1, app2]);
+
+      await service.activate('student-uuid');
+
+      // Solo app1 estaba inactiva → se reactiva
+      expect(mockOauthClientRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 10, isActive: true }));
+      // app2 ya estaba activa → no se toca
+      expect(mockOauthClientRepo.save).not.toHaveBeenCalledWith(expect.objectContaining({ id: 20 }));
     });
 
     it('debería lanzar NotFoundException si el alumno no existe', async () => {

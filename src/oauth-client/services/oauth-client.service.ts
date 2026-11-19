@@ -156,9 +156,25 @@ export class OAuthClientService implements IOAuthClientService {
   async update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto> {
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
-    Object.assign(client, dto);
+
+    // Si se quiere cambiar el responsable, validar que esté activo
+    if (dto.responsibleUserId !== undefined) {
+      const student = await this.studentService.findOne(dto.responsibleUserId);
+      if (student.account_status !== 'active') {
+        throw new BadRequestException(
+          'El usuario responsable debe estar activo (no puede estar suspendido ni pendiente de configurar contraseña).',
+        );
+      }
+      client.responsibleUserId = dto.responsibleUserId;
+    }
+
+    if (dto.clientName !== undefined) client.clientName = dto.clientName;
+    if (dto.redirectUris !== undefined) client.redirectUris = dto.redirectUris;
+
     const saved = await this.clientRepository.save(client);
-    return this.toResponseDto(saved);
+    // Recargar para obtener la relación eager actualizada
+    const reloaded = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
+    return this.toResponseDto(reloaded);
   }
 
   async remove(id: number): Promise<void> {

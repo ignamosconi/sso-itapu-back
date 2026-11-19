@@ -54,6 +54,15 @@ export class CredentialTokenService implements ICredentialTokenService {
   }
 
   async generate(dto: GenerateCredentialTokenDto): Promise<string> {
+    // Invalidar todos los tokens anteriores no usados para este mismo cliente
+    await this.repo
+      .createQueryBuilder()
+      .update(CredentialTokenEntity)
+      .set({ used: true })
+      .where('"oauthClientId" = :clientId', { clientId: dto.oauthClientId })
+      .andWhere('used = false')
+      .execute();
+
     const plain = randomBytes(32).toString('hex');
     await this.repo.save({
       tokenHash: this.hashToken(plain),

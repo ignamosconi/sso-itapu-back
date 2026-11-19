@@ -3,6 +3,8 @@ import { REDIS_CLIENT } from '../../redis/redis.module.js';
 import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { StudentEntity } from '../../student/entities/student.entity.js';
+import type { IStudentService } from '../../student/services/student.service.interface.js';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -16,7 +18,9 @@ import { OAuthClientResponseDto } from '../dtos/oauth-client-response.dto.js';
 import { OAuthClientCreatedResponseDto } from '../dtos/oauth-client-created-response.dto.js';
 import { OAuthClientInfoDto } from '../dtos/oauth-client-info.dto.js';
 import type { IRefreshTokenService } from '../../refresh-token/services/refresh-token.service.interface.js';
-import type { IMailService } from 'src/mail/services/mail.service.interface.js';
+import type { IMailService } from '../../mail/services/mail.service.interface.js';
+import { ChangeResponsibleUserDto } from '../dtos/change-responsible-user.dto.js';
+import { ResponsibleUserResponseDto } from '../dtos/responsible-user-response.dto.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -35,6 +39,8 @@ export class OAuthClientService implements IOAuthClientService {
     private readonly redis: Redis,
     @Inject('IMailService')
     private readonly mailService: IMailService,
+    @Inject('IStudentService')
+    private readonly studentService: IStudentService,
   ) {}
 
 
@@ -60,6 +66,21 @@ export class OAuthClientService implements IOAuthClientService {
     return secret;
   }
 
+  private censorEmail(email: string): string {
+    const [local, domain] = email.split('@');
+    const visible = local.substring(0, Math.min(2, local.length));
+    return `${visible}***@${domain}`;
+  }
+
+  private toResponsibleUserDto(student: StudentEntity | null): ResponsibleUserResponseDto | null {
+    if (!student) return null;
+    return {
+      id: student.id,
+      username: student.username,
+      fullName: `${student.first_name} ${student.last_name}`,
+      censoredEmail: this.censorEmail(student.email),
+    };
+  }
 
   // Mapea entidad a DTO de respuesta general (sin secret)
   private toResponseDto(entity: OAuthClientEntity): OAuthClientResponseDto {
@@ -70,6 +91,7 @@ export class OAuthClientService implements IOAuthClientService {
       isActive: entity.isActive,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      responsibleUser: this.toResponsibleUserDto(entity.responsibleUser),
     };
   }
 
@@ -81,6 +103,7 @@ export class OAuthClientService implements IOAuthClientService {
       redirectUris: entity.redirectUris,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      responsibleUser: this.toResponsibleUserDto(entity.responsibleUser),
     };
   }
 
@@ -112,22 +135,46 @@ export class OAuthClientService implements IOAuthClientService {
   }
 
   async create(dto: CreateOAuthClientDto, adminId: string): Promise<OAuthClientCreatedResponseDto> {
+    // findOne lanza NotFoundException si no existe — se propaga como 404.
+    const student = await this.studentService.findOne(dto.responsibleUserId);
+    if (student.account_status !== 'active') {
+      throw new BadRequestException(
+        'El usuario responsable debe estar activo (no puede estar suspendido ni pendiente de configurar contraseña).',
+      );
+    }
     const plainSecret = randomBytes(32).toString('hex');
     const clientSecret = await bcrypt.hash(plainSecret, BCRYPT_ROUNDS);
+    // responsibleUserId viene del dto (spread), la FK se persiste sola.
     const entity = this.clientRepository.create({ ...dto, clientSecret });
     const saved = await this.clientRepository.save(entity);
-    // Guardar el secret en Redis para que send-credentials lo recupere sin
-    // que el frontend tenga que reenviarlo.
+    // Recargar para obtener la relación eager (responsibleUser).
+    const withRelations = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
     await this.storePendingSecret(saved.id, plainSecret, adminId);
-    return this.toCreatedResponseDto(saved);
+    return this.toCreatedResponseDto(withRelations);
   }
 
   async update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto> {
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
-    Object.assign(client, dto);
+
+    // Si se quiere cambiar el responsable, validar que esté activo
+    if (dto.responsibleUserId !== undefined) {
+      const student = await this.studentService.findOne(dto.responsibleUserId);
+      if (student.account_status !== 'active') {
+        throw new BadRequestException(
+          'El usuario responsable debe estar activo (no puede estar suspendido ni pendiente de configurar contraseña).',
+        );
+      }
+      client.responsibleUserId = dto.responsibleUserId;
+    }
+
+    if (dto.clientName !== undefined) client.clientName = dto.clientName;
+    if (dto.redirectUris !== undefined) client.redirectUris = dto.redirectUris;
+
     const saved = await this.clientRepository.save(client);
-    return this.toResponseDto(saved);
+    // Recargar para obtener la relación eager actualizada
+    const reloaded = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
+    return this.toResponseDto(reloaded);
   }
 
   async remove(id: number): Promise<void> {
@@ -154,7 +201,7 @@ export class OAuthClientService implements IOAuthClientService {
     return this.toCreatedResponseDto(saved);
   }
 
-  async sendCredentialsByEmail(id: number, to: string, adminId: string): Promise<void> {
+  async sendCredentialsByEmail(id: number, adminId: string): Promise<void> {
 
     // Recuperar el secret desde Redis — nunca lo recibimos del frontend.
     // Si el secret ya fue consumido o expiró, el admin debe regenerarlo.
@@ -170,6 +217,10 @@ export class OAuthClientService implements IOAuthClientService {
 
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
+    if (!client.responsibleUser) {
+      throw new BadRequestException('Este cliente no tiene usuario responsable asignado.');
+    }
+    const to = client.responsibleUser.email;
 
     const ssoUrl = this.configService.getOrThrow<string>('SSO_BASE_URL');
 
@@ -339,6 +390,21 @@ export class OAuthClientService implements IOAuthClientService {
     } catch {
       throw new BadRequestException('Error al enviar el correo. Verificá la configuración de email.');
     }
+  }
+
+  async changeResponsibleUser(id: number, dto: ChangeResponsibleUserDto): Promise<OAuthClientResponseDto> {
+    const client = await this.clientRepository.findOne({ where: { id } });
+    if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
+    const student = await this.studentService.findOne(dto.responsibleUserId);
+    if (student.account_status !== 'active') {
+      throw new BadRequestException(
+        'El usuario responsable debe estar activo (no puede estar suspendido ni pendiente de configurar contraseña).',
+      );
+    }
+    client.responsibleUserId = dto.responsibleUserId;
+    const saved = await this.clientRepository.save(client);
+    const reloaded = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
+    return this.toResponseDto(reloaded);
   }
 
   async suspend(id: number): Promise<OAuthClientResponseDto> {

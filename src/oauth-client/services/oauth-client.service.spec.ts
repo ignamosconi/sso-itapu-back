@@ -5,7 +5,7 @@ jest.mock('bcrypt', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OAuthClientService } from './oauth-client.service.js';
 import { OAuthClientEntity } from '../entities/oauth-client.entity.js';
@@ -19,6 +19,8 @@ function makeClient(overrides: Partial<OAuthClientEntity> = {}): OAuthClientEnti
     redirectUris: ['https://app.com/callback'],
     clientSecret: '$2b$10$hashedsecret',
     isActive: true,
+    responsibleUser: null,
+    responsibleUserId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -32,6 +34,7 @@ describe('OAuthClientService', () => {
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRedis: jest.Mocked<Record<string, jest.Mock>>;
   let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
+  let mockStudentService: jest.Mocked<Record<string, jest.Mock>>;
 
   beforeEach(async () => {
     mockRepo = {
@@ -40,6 +43,7 @@ describe('OAuthClientService', () => {
       create: jest.fn(),
       save: jest.fn(),
       remove: jest.fn(),
+      findOneOrFail: jest.fn(),
     };
 
     mockCredentialTokenService = {
@@ -55,6 +59,17 @@ describe('OAuthClientService', () => {
       getdel: jest.fn().mockResolvedValue(null),
     };
 
+    mockStudentService = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'student-uuid',
+        username: 'jdoe',
+        first_name: 'John',
+        last_name: 'Doe',
+        email: 'jdoe@example.com',
+        account_status: 'active',
+      }),
+    };
+
     mockMailService = {
       send: jest.fn().mockResolvedValue(undefined),
     };
@@ -67,6 +82,7 @@ describe('OAuthClientService', () => {
         { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
         { provide: REDIS_CLIENT, useValue: mockRedis },
         { provide: 'IMailService', useValue: mockMailService },
+        { provide: 'IStudentService', useValue: mockStudentService },
         {
           provide: ConfigService,
           useValue: {
@@ -204,9 +220,10 @@ describe('OAuthClientService', () => {
       const client = makeClient();
       mockRepo.create.mockReturnValue(client);
       mockRepo.save.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUser: null });
 
       const result = await service.create(
-        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
         'admin-uuid',
       );
 
@@ -223,13 +240,61 @@ describe('OAuthClientService', () => {
     it('debería lanzar NotFoundException si no existe el cliente al crear', async () => {
       mockRepo.create.mockReturnValue(makeClient());
       mockRepo.save.mockResolvedValue(makeClient());
+      mockRepo.findOneOrFail.mockResolvedValue(makeClient());
       mockRepo.findOne.mockResolvedValue(null);
       // create no hace findOne previo, solo save — este test verifica el flujo básico
       const result = await service.create(
-        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'] },
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
         'admin-uuid',
       );
       expect(result).toBeDefined();
+    });
+  });
+
+  describe('update', () => {
+    it('debería actualizar clientName y redirectUris sin cambiar responsable', async () => {
+      const client = makeClient();
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.save.mockResolvedValue({ ...client, clientName: 'NuevoNombre' });
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, clientName: 'NuevoNombre' });
+
+      const result = await service.update(1, { clientName: 'NuevoNombre', redirectUris: ['https://new.com/cb'] });
+
+      expect(result.clientName).toBe('NuevoNombre');
+      expect(mockStudentService.findOne).not.toHaveBeenCalled();
+    });
+
+    it('debería cambiar el responsable si el nuevo usuario está activo', async () => {
+      const client = makeClient({ responsibleUserId: 'old-uuid' });
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.save.mockResolvedValue({ ...client, responsibleUserId: 'student-uuid' });
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUserId: 'student-uuid' });
+      mockStudentService.findOne.mockResolvedValue({
+        id: 'student-uuid',
+        account_status: 'active',
+      });
+
+      const result = await service.update(1, { responsibleUserId: 'student-uuid' });
+
+      expect(mockStudentService.findOne).toHaveBeenCalledWith('student-uuid');
+      expect(result).toBeDefined();
+    });
+
+    it('debería lanzar BadRequestException si el nuevo responsable no está activo', async () => {
+      const client = makeClient();
+      mockRepo.findOne.mockResolvedValue(client);
+      mockStudentService.findOne.mockResolvedValue({
+        id: 'student-uuid',
+        account_status: 'suspended',
+      });
+
+      await expect(service.update(1, { responsibleUserId: 'student-uuid' }))
+        .rejects.toThrow(BadRequestException);
+    });
+
+    it('debería lanzar NotFoundException si el cliente no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.update(999, { clientName: 'X' })).rejects.toThrow(NotFoundException);
     });
   });
 });

@@ -7,7 +7,7 @@ import { UpdateOAuthClientDto } from '../dtos/update-oauth-client.dto.js';
 import { OAuthClientResponseDto } from '../dtos/oauth-client-response.dto.js';
 import { OAuthClientCreatedResponseDto } from '../dtos/oauth-client-created-response.dto.js';
 import { OAuthClientInfoDto } from '../dtos/oauth-client-info.dto.js';
-import { SendCredentialsEmailDto } from '../dtos/send-credentials-email.dto.js';
+import { ChangeResponsibleUserDto } from '../dtos/change-responsible-user.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
 import { AdminJwtPayloadDto } from '../../admin-auth/dtos/admin-jwt-payload.dto.js';
 
@@ -107,9 +107,22 @@ export class OAuthClientController implements IOAuthClientController {
   sendCredentialsByEmail(
     @Request() req: RequestWithAdmin,
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: SendCredentialsEmailDto,
   ): Promise<void> {
-    return this.oauthClientService.sendCredentialsByEmail(id, dto.to, req.admin.sub);
+    return this.oauthClientService.sendCredentialsByEmail(id, req.admin.sub);
+  }
+
+  @ApiOperation({ summary: 'Cambiar usuario responsable del cliente OAuth' })
+  @ApiResponse({ status: 200, type: OAuthClientResponseDto })
+  @ApiResponse({ status: 404, description: 'Cliente o usuario no encontrado' })
+  @ApiResponse({ status: 400, description: 'El usuario no está activo' })
+  @ApiBearerAuth('admin-jwt')
+  @UseGuards(AdminJwtGuard)
+  @Patch(':id/responsible-user')
+  changeResponsibleUser(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ChangeResponsibleUserDto,
+  ): Promise<OAuthClientResponseDto> {
+    return this.oauthClientService.changeResponsibleUser(id, dto);
   }
 
   @ApiOperation({ summary: 'Suspender cliente OAuth', description: 'El cliente no podrá autenticar usuarios hasta que sea reactivado.' })

@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ResponsibleUserResponseDto } from './responsible-user-response.dto.js';
 
 export class OAuthClientCreatedResponseDto {
   @ApiProperty({ example: 1 })
@@ -15,4 +16,7 @@ export class OAuthClientCreatedResponseDto {
 
   @ApiProperty()
   readonly updatedAt!: Date;
+
+  @ApiProperty({ type: ResponsibleUserResponseDto, nullable: true })
+  readonly responsibleUser!: ResponsibleUserResponseDto | null;
 }

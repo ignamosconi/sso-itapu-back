@@ -1,14 +1,17 @@
 import {
   Injectable, NotFoundException, ConflictException,
   BadRequestException, UnauthorizedException, Inject,
+  HttpException, HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import type { IStudentService } from './student.service.interface.js';
 import type { IPasswordResetTokenService } from '../../password-reset-token/services/password-reset-token.service.interface.js';
-import type { IMailService } from 'src/mail/services/mail.service.interface.js';
+import type { IMailService } from '../../mail/services/mail.service.interface.js';
 import { StudentEntity, AccountStatus } from '../entities/student.entity.js';
+import { OAuthClientEntity } from '../../oauth-client/entities/oauth-client.entity.js';
+import type { IRefreshTokenService } from '../../refresh-token/services/refresh-token.service.interface.js';
 import { DomainRoleEntity } from '../../domain-role/entities/domain-role.entity.js';
 import { SpecialtyEntity } from '../../specialty/entities/specialty.entity.js';
 import { CreateStudentDto } from '../dtos/create-student.dto.js';
@@ -34,6 +37,10 @@ export class StudentService implements IStudentService {
     private readonly domainRoleRepo: Repository<DomainRoleEntity>,
     @InjectRepository(SpecialtyEntity)
     private readonly specialtyRepo: Repository<SpecialtyEntity>,
+    @InjectRepository(OAuthClientEntity)
+    private readonly oauthClientRepo: Repository<OAuthClientEntity>,
+    @Inject('IRefreshTokenService')
+    private readonly refreshTokenService: IRefreshTokenService,
     @Inject('IPasswordResetTokenService')
     private readonly passwordResetTokenService: IPasswordResetTokenService,
     @Inject('IMailService')
@@ -245,6 +252,22 @@ export class StudentService implements IStudentService {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException(`Alumno con id ${id} no encontrado.`);
 
+    // Verificar si el usuario es responsable de alguna app OAuth
+    const responsibleApps = await this.oauthClientRepo.find({
+      where: { responsibleUserId: id },
+      select: { id: true, clientName: true },
+    });
+    if (responsibleApps.length > 0) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.CONFLICT,
+          message: 'No es posible eliminar a este usuario porque es responsable de apps OAuth.',
+          responsibleApps: responsibleApps.map(a => ({ id: a.id, clientName: a.clientName })),
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+
     if (entity.password !== null) {
       if (!dto.password) {
         throw new BadRequestException('Este alumno tiene contraseña configurada. Debés ingresar su contraseña para confirmar la baja.');
@@ -263,7 +286,19 @@ export class StudentService implements IStudentService {
       throw new BadRequestException('El alumno ya está suspendido.');
     }
     entity.account_status = AccountStatus.Suspended;
-    return this.toDto(await this.repo.save(entity));
+    const saved = await this.repo.save(entity);
+
+    // Cascade: suspender apps y revocar sesiones activas
+    const apps = await this.oauthClientRepo.find({ where: { responsibleUserId: id } });
+    for (const app of apps) {
+      if (app.isActive) {
+        await this.refreshTokenService.revokeAllForClient(app.id);
+        app.isActive = false;
+        await this.oauthClientRepo.save(app);
+      }
+    }
+
+    return this.toDto(saved);
   }
 
   async activate(id: string): Promise<StudentResponseDto> {
@@ -272,7 +307,18 @@ export class StudentService implements IStudentService {
     entity.account_status = entity.password === null
       ? AccountStatus.PendingRegistration
       : AccountStatus.Active;
-    return this.toDto(await this.repo.save(entity));
+    const saved = await this.repo.save(entity);
+
+    // Cascade: reactivar todas las apps de las que este usuario es responsable
+    const apps = await this.oauthClientRepo.find({ where: { responsibleUserId: id } });
+    for (const app of apps) {
+      if (!app.isActive) {
+        app.isActive = true;
+        await this.oauthClientRepo.save(app);
+      }
+    }
+
+    return this.toDto(saved);
   }
 
   // ── Import Excel ───────────────────────────────────────────────────────────

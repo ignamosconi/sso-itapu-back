@@ -1,4 +1,4 @@
-import { IsString, IsUrl, MinLength, IsArray, ArrayMaxSize, ArrayMinSize } from 'class-validator';
+import { IsString, IsUrl, MinLength, IsArray, ArrayMaxSize, ArrayMinSize, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateOAuthClientDto {
@@ -16,4 +16,11 @@ export class CreateOAuthClientDto {
   @ArrayMaxSize(5)
   @IsUrl({ require_tld: false, require_protocol: true, protocols: ['http', 'https'] }, { each: true })
   redirectUris!: string[];
+
+  @ApiProperty({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID del usuario responsable de la integración. Debe estar activo.',
+  })
+  @IsUUID()
+  responsibleUserId!: string;
 }

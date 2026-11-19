@@ -3,6 +3,7 @@ import { UpdateOAuthClientDto } from '../dtos/update-oauth-client.dto.js';
 import { OAuthClientResponseDto } from '../dtos/oauth-client-response.dto.js';
 import { OAuthClientCreatedResponseDto } from '../dtos/oauth-client-created-response.dto.js';
 import { OAuthClientInfoDto } from '../dtos/oauth-client-info.dto.js';
+import { ChangeResponsibleUserDto } from '../dtos/change-responsible-user.dto.js';
 
 export interface IOAuthClientService {
   findAll(): Promise<OAuthClientResponseDto[]>;
@@ -13,7 +14,8 @@ export interface IOAuthClientService {
   update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto>;
   remove(id: number): Promise<void>;
   regenerateSecret(id: number, adminId: string): Promise<OAuthClientCreatedResponseDto>;
-  sendCredentialsByEmail(id: number, to: string, adminId: string): Promise<void>;
+  sendCredentialsByEmail(id: number, adminId: string): Promise<void>;
+  changeResponsibleUser(id: number, dto: ChangeResponsibleUserDto): Promise<OAuthClientResponseDto>;
   suspend(id: number): Promise<OAuthClientResponseDto>;
   activate(id: number): Promise<OAuthClientResponseDto>;
 }

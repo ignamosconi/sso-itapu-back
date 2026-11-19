@@ -12,7 +12,7 @@ import type { IOAuthClientService } from '../../oauth-client/services/oauth-clie
 import type { IRefreshTokenService } from '../../refresh-token/services/refresh-token.service.interface.js';
 import type { IStudentService } from '../../student/services/student.service.interface.js';
 import type { IPasswordResetTokenService } from '../../password-reset-token/services/password-reset-token.service.interface.js';
-import type { IMailService } from 'src/mail/services/mail.service.interface.js';
+import type { IMailService } from '../../mail/services/mail.service.interface.js';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module.js';
 import { ResendSetupEmailRequestDto } from '../dtos/resend-setup-email-request.dto.js';

@@ -2,7 +2,7 @@ import { Controller, Post, Body, Inject, HttpCode, UseGuards, Request } from '@n
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
 import { Admin2faResetDto } from '../dtos/admin-2fa-reset.dto.js';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { IAdminAuthController, RequestWithAdmin } from './admin-auth.controller.interface.js';
 import type { IAdminAuthService } from '../services/admin-auth.service.interface.js';
@@ -80,6 +80,7 @@ export class AdminAuthController implements IAdminAuthController {
   @ApiResponse({ status: 401, description: 'Password incorrecta o token inválido' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @HttpCode(204)
   @Post('2fa/reset')
   reset2fa(@Request() req: RequestWithAdmin, @Body() dto: Admin2faResetDto): Promise<void> {

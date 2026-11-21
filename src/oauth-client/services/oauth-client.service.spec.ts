@@ -43,6 +43,7 @@ describe('OAuthClientService', () => {
       create: jest.fn(),
       save: jest.fn(),
       remove: jest.fn(),
+      update: jest.fn().mockResolvedValue(undefined),
       findOneOrFail: jest.fn(),
     };
 
@@ -255,19 +256,22 @@ describe('OAuthClientService', () => {
     it('debería actualizar clientName y redirectUris sin cambiar responsable', async () => {
       const client = makeClient();
       mockRepo.findOne.mockResolvedValue(client);
-      mockRepo.save.mockResolvedValue({ ...client, clientName: 'NuevoNombre' });
       mockRepo.findOneOrFail.mockResolvedValue({ ...client, clientName: 'NuevoNombre' });
 
       const result = await service.update(1, { clientName: 'NuevoNombre', redirectUris: ['https://new.com/cb'] });
 
-      expect(result.clientName).toBe('NuevoNombre');
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        { id: 1 },
+        { clientName: 'NuevoNombre', redirectUris: ['https://new.com/cb'] },
+      );
+      expect(mockRepo.save).not.toHaveBeenCalled();
       expect(mockStudentService.findOne).not.toHaveBeenCalled();
+      expect(result.clientName).toBe('NuevoNombre');
     });
 
     it('debería cambiar el responsable si el nuevo usuario está activo', async () => {
       const client = makeClient({ responsibleUserId: 'old-uuid' });
       mockRepo.findOne.mockResolvedValue(client);
-      mockRepo.save.mockResolvedValue({ ...client, responsibleUserId: 'student-uuid' });
       mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUserId: 'student-uuid' });
       mockStudentService.findOne.mockResolvedValue({
         id: 'student-uuid',
@@ -277,7 +281,19 @@ describe('OAuthClientService', () => {
       const result = await service.update(1, { responsibleUserId: 'student-uuid' });
 
       expect(mockStudentService.findOne).toHaveBeenCalledWith('student-uuid');
+      expect(mockRepo.update).toHaveBeenCalledWith({ id: 1 }, { responsibleUserId: 'student-uuid' });
+      expect(mockRepo.save).not.toHaveBeenCalled();
       expect(result).toBeDefined();
+    });
+
+    it('no debería llamar a update si no hay cambios', async () => {
+      const client = makeClient();
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue(client);
+
+      await service.update(1, {});
+
+      expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
     it('debería lanzar BadRequestException si el nuevo responsable no está activo', async () => {
@@ -290,11 +306,45 @@ describe('OAuthClientService', () => {
 
       await expect(service.update(1, { responsibleUserId: 'student-uuid' }))
         .rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
     it('debería lanzar NotFoundException si el cliente no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
       await expect(service.update(999, { clientName: 'X' })).rejects.toThrow(NotFoundException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changeResponsibleUser', () => {
+    it('debería actualizar solo la columna del responsable si el usuario está activo', async () => {
+      const client = makeClient({ responsibleUserId: 'old-uuid' });
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUserId: 'student-uuid' });
+
+      const result = await service.changeResponsibleUser(1, { responsibleUserId: 'student-uuid' });
+
+      expect(mockRepo.update).toHaveBeenCalledWith({ id: 1 }, { responsibleUserId: 'student-uuid' });
+      expect(mockRepo.save).not.toHaveBeenCalled();
+      expect(result).toBeDefined();
+    });
+
+    it('debería lanzar BadRequestException si el usuario no está activo', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockStudentService.findOne.mockResolvedValue({
+        id: 'student-uuid',
+        account_status: 'suspended',
+      });
+
+      await expect(service.changeResponsibleUser(1, { responsibleUserId: 'student-uuid' }))
+        .rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('debería lanzar NotFoundException si el cliente no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.changeResponsibleUser(999, { responsibleUserId: 'student-uuid' }))
+        .rejects.toThrow(NotFoundException);
     });
   });
 });

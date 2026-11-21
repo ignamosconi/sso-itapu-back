@@ -94,6 +94,7 @@
       if (data.status === 'has_password') {
         document.getElementById('passwordInput').value = '';
         showScreen('screen-password');
+        document.getElementById('passwordInput').focus();
       } else {
         document.getElementById('maskedEmail').textContent = data.maskedEmail;
         if (data.cooldownSeconds > 0) {

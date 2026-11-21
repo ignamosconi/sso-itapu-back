@@ -157,6 +157,8 @@ export class OAuthClientService implements IOAuthClientService {
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
 
+    const changes: Partial<Pick<OAuthClientEntity, 'clientName' | 'redirectUris' | 'responsibleUserId'>> = {};
+
     // Si se quiere cambiar el responsable, validar que esté activo
     if (dto.responsibleUserId !== undefined) {
       const student = await this.studentService.findOne(dto.responsibleUserId);
@@ -165,15 +167,19 @@ export class OAuthClientService implements IOAuthClientService {
           'El usuario responsable debe estar activo (no puede estar suspendido ni pendiente de configurar contraseña).',
         );
       }
-      client.responsibleUserId = dto.responsibleUserId;
+      changes.responsibleUserId = dto.responsibleUserId;
     }
 
-    if (dto.clientName !== undefined) client.clientName = dto.clientName;
-    if (dto.redirectUris !== undefined) client.redirectUris = dto.redirectUris;
+    if (dto.clientName !== undefined) changes.clientName = dto.clientName;
+    if (dto.redirectUris !== undefined) changes.redirectUris = dto.redirectUris;
 
-    const saved = await this.clientRepository.save(client);
-    // Recargar para obtener la relación eager actualizada
-    const reloaded = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
+    // update() solo escribe las columnas indicadas. No usamos save() porque la relación
+    // eager `responsibleUser` ya cargada (la vieja) pisaría el nuevo responsibleUserId.
+    if (Object.keys(changes).length > 0) {
+      await this.clientRepository.update({ id }, changes);
+    }
+
+    const reloaded = await this.clientRepository.findOneOrFail({ where: { id } });
     return this.toResponseDto(reloaded);
   }
 
@@ -401,9 +407,8 @@ export class OAuthClientService implements IOAuthClientService {
         'El usuario responsable debe estar activo (no puede estar suspendido ni pendiente de configurar contraseña).',
       );
     }
-    client.responsibleUserId = dto.responsibleUserId;
-    const saved = await this.clientRepository.save(client);
-    const reloaded = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
+    await this.clientRepository.update({ id }, { responsibleUserId: dto.responsibleUserId });
+    const reloaded = await this.clientRepository.findOneOrFail({ where: { id } });
     return this.toResponseDto(reloaded);
   }
 

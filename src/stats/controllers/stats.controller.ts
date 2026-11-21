@@ -4,10 +4,12 @@ import type { IStatsController } from './stats.controller.interface.js';
 import type { IStatsService } from '../services/stats.service.interface.js';
 import { DashboardStatsDto } from '../dtos/dashboard-stats.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
+import { SkipThrottle } from '@nestjs/throttler';
 
 @ApiTags('Admin — Estadísticas')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
+@SkipThrottle()
 @Controller('admin/stats')
 export class StatsController implements IStatsController {
   constructor(

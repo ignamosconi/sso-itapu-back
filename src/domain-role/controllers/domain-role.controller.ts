@@ -5,10 +5,12 @@ import type { IDomainRoleService } from '../services/domain-role.service.interfa
 import { CreateDomainRoleDto } from '../dtos/create-domain-role.dto.js';
 import { DomainRoleResponseDto } from '../dtos/domain-role-response.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
+import { SkipThrottle } from '@nestjs/throttler';
 
 @ApiTags('Admin — Roles institucionales')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
+@SkipThrottle()
 @Controller('admin/domain-roles')
 export class DomainRoleController implements IDomainRoleController {
   constructor(

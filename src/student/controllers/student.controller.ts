@@ -1,3 +1,4 @@
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Inject,
   UseGuards, ParseUUIDPipe, Query, UseInterceptors, UploadedFile,
@@ -24,6 +25,7 @@ import 'multer';   //Si no está esta línea, se rompe el multer abajo.
 @ApiTags('Admin — Padrón de usuarios')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
+@SkipThrottle()
 @Controller('admin/students')
 export class StudentController implements IStudentController {
   constructor(

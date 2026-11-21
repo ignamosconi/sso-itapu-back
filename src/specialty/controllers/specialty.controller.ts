@@ -5,10 +5,12 @@ import type { ISpecialtyService } from '../services/specialty.service.interface.
 import { CreateSpecialtyDto } from '../dtos/create-specialty.dto.js';
 import { SpecialtyResponseDto } from '../dtos/specialty-response.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
+import { SkipThrottle } from '@nestjs/throttler';
 
 @ApiTags('Admin — Especialidades')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
+@SkipThrottle()
 @Controller('admin/specialties')
 export class SpecialtyController implements ISpecialtyController {
   constructor(

@@ -1,3 +1,4 @@
+import { SkipThrottle } from '@nestjs/throttler';
 import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Inject, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IOAuthClientController } from './oauth-client.controller.interface.js';
@@ -29,6 +30,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 200, type: [OAuthClientResponseDto] })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Get()
   findAll(): Promise<OAuthClientResponseDto[]> {
     return this.oauthClientService.findAll();
@@ -39,6 +41,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientResponseDto> {
     return this.oauthClientService.findOne(id);
@@ -59,6 +62,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'El plainSecret solo es visible en esta respuesta.' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Post()
   create(@Request() req: RequestWithAdmin, @Body() dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto> {
     return this.oauthClientService.create(dto, req.admin.sub);
@@ -69,6 +73,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Patch(':id')
   update(
     @Param('id', ParseIntPipe) id: number,
@@ -82,6 +87,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
     return this.oauthClientService.remove(id);
@@ -92,6 +98,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Post(':id/regenerate-secret')
   regenerateSecret(@Request() req: RequestWithAdmin, @Param('id', ParseIntPipe) id: number): Promise<OAuthClientCreatedResponseDto> {
     return this.oauthClientService.regenerateSecret(id, req.admin.sub);
@@ -103,6 +110,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 400, description: 'Error al enviar el email' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Post(':id/send-credentials')
   sendCredentialsByEmail(
     @Request() req: RequestWithAdmin,
@@ -117,6 +125,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 400, description: 'El usuario no está activo' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Patch(':id/responsible-user')
   changeResponsibleUser(
     @Param('id', ParseIntPipe) id: number,
@@ -130,6 +139,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Patch(':id/suspend')
   suspend(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientResponseDto> {
     return this.oauthClientService.suspend(id);
@@ -140,6 +150,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @SkipThrottle()
   @Patch(':id/activate')
   activate(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientResponseDto> {
     return this.oauthClientService.activate(id);

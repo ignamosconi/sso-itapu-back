@@ -171,9 +171,10 @@ export class OAuthClientService implements IOAuthClientService {
     if (dto.clientName !== undefined) client.clientName = dto.clientName;
     if (dto.redirectUris !== undefined) client.redirectUris = dto.redirectUris;
 
-    const saved = await this.clientRepository.save(client);
-    // Recargar para obtener la relación eager actualizada
-    const reloaded = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
+    await this.clientRepository.save(client);
+    // Limpiar el cache del entity manager y recargar con la relación eager actualizada
+    this.clientRepository.manager.clear(OAuthClientEntity);
+    const reloaded = await this.clientRepository.findOneOrFail({ where: { id } });
     return this.toResponseDto(reloaded);
   }
 

@@ -118,10 +118,15 @@ export class OAuthClientService implements IOAuthClientService {
     return this.toResponseDto(client);
   }
 
-  async findInfo(id: number): Promise<OAuthClientInfoDto> {
+  async findInfo(id: number, redirectUri?: string): Promise<OAuthClientInfoDto> {
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
-        return { clientName: client.clientName, isActive: client.isActive };
+    return {
+      clientName: client.clientName,
+      isActive: client.isActive,
+      redirectUriValid:
+        redirectUri === undefined ? undefined : client.redirectUris.includes(redirectUri),
+    };
   }
 
   async validateClient(id: number, secret: string, redirectUri: string): Promise<boolean> {

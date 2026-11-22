@@ -8,7 +8,7 @@ import { ChangeResponsibleUserDto } from '../dtos/change-responsible-user.dto.js
 export interface IOAuthClientService {
   findAll(): Promise<OAuthClientResponseDto[]>;
   findOne(id: number): Promise<OAuthClientResponseDto>;
-  findInfo(id: number): Promise<OAuthClientInfoDto>;
+    findInfo(id: number, redirectUri?: string): Promise<OAuthClientInfoDto>;
   validateClient(id: number, secret: string, redirectUri: string): Promise<boolean>;
   create(dto: CreateOAuthClientDto, adminId: string): Promise<OAuthClientCreatedResponseDto>;
   update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto>;

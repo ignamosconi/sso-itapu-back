@@ -138,6 +138,25 @@ describe('OAuthClientService', () => {
   });
 
   describe('findInfo', () => {
+
+    it('debería informar redirectUriValid true si el redirect_uri está registrado', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1, 'https://app.com/callback');
+      expect(result.redirectUriValid).toBe(true);
+    });
+
+    it('debería informar redirectUriValid false si el redirect_uri no está registrado', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1, 'https://otro.com/callback');
+      expect(result.redirectUriValid).toBe(false);
+    });
+
+    it('no debería informar redirectUriValid si no se envía redirect_uri', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1);
+      expect(result.redirectUriValid).toBeUndefined();
+    });
+
     it('debería retornar clientName e isActive de un cliente activo', async () => {
       mockRepo.findOne.mockResolvedValue(makeClient());
       const result = await service.findInfo(1);

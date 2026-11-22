@@ -54,7 +54,7 @@
       showError(msg);
     }
 
-    fetch(`/admin/clients/${encodeURIComponent(clientId)}/info`)
+    fetch(`/admin/clients/${encodeURIComponent(clientId)}/info?redirect_uri=${encodeURIComponent(redirectUri)}`)
       .then(async r => {
         if (r.status === 400 || r.status === 404) {
           blockLogin('La aplicación no existe. Contactá a un administrador.');
@@ -67,6 +67,10 @@
         const data = await r.json();
         if (data.isActive === false) {
           blockLogin('La aplicación está suspendida. Contactá a un administrador.');
+          return;
+        }
+        if (data.redirectUriValid === false) {
+          blockLogin('La URL de redirección en el link no coincide con las registradas. Contactá al desarrollador de la aplicación para que lo resuelva.');
           return;
         }
         if (data.clientName) {

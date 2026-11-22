@@ -212,4 +212,24 @@ describe('PasswordResetTokenService', () => {
       await expect(service.consume('valid-token')).rejects.toThrow(GoneException);
     });
   });
+
+  // ── invalidateAllForStudent ─────────────────────────────────────────────────
+  describe('invalidateAllForStudent', () => {
+    it('debería borrar los links pendientes del alumno (de cualquier propósito)', async () => {
+      await service.invalidateAllForStudent('student-uuid');
+
+      expect(mockRepo.delete).toHaveBeenCalledWith({ studentId: 'student-uuid', used: false });
+    });
+
+    it('debería usar el repositorio del manager si se lo pasan (para correr dentro de una transacción)', async () => {
+      const txRepo = { delete: jest.fn().mockResolvedValue({}) };
+      const manager = { getRepository: jest.fn().mockReturnValue(txRepo) };
+
+      await service.invalidateAllForStudent('student-uuid', manager as never);
+
+      expect(manager.getRepository).toHaveBeenCalledWith(PasswordResetTokenEntity);
+      expect(txRepo.delete).toHaveBeenCalledWith({ studentId: 'student-uuid', used: false });
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -29,6 +29,7 @@ import { TokenResponseDto } from '../dtos/token-response.dto.js';
 import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
 import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
+import { html } from '../../mail/utils/email-html.js';
 
 @Injectable()
 export class AuthService implements IAuthService {
@@ -163,7 +164,7 @@ export class AuthService implements IAuthService {
       student.email,
       'Configurá tu contraseña — ITAPU',
       {
-        html: `
+        html: html`
         <p>Hola <strong>${student.first_name}</strong>,</p>
         <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
         <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>

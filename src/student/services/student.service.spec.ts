@@ -114,6 +114,7 @@ describe('StudentService', () => {
 
     mockRefreshTokenService = {
       revokeAllForClient: jest.fn().mockResolvedValue(undefined),
+      revokeAllForSub: jest.fn().mockResolvedValue(undefined),
     };
 
     mockPasswordAttempts = {
@@ -533,6 +534,54 @@ describe('StudentService', () => {
 
       expect(mockPasswordAttempts.registerAttempt).not.toHaveBeenCalled();
     });
+
+    it('debería cerrar todas las sesiones del alumno antes de eliminarlo', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      mockRepo.remove.mockResolvedValue({});
+
+      await service.remove('student-uuid', { password: 'correcta' });
+
+      expect(mockRefreshTokenService.revokeAllForSub).toHaveBeenCalledWith('student-uuid');
+      expect(mockRefreshTokenService.revokeAllForSub.mock.invocationCallOrder[0])
+        .toBeLessThan(mockRepo.remove.mock.invocationCallOrder[0]);
+    });
+
+    it('debería cerrar las sesiones también si el alumno no tiene contraseña', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ password: null }));
+      mockOauthClientRepo.find.mockResolvedValue([]);
+      mockRepo.remove.mockResolvedValue({});
+
+      await service.remove('student-uuid', {});
+
+      expect(mockRefreshTokenService.revokeAllForSub).toHaveBeenCalledWith('student-uuid');
+    });
+
+    it('no debería cerrar sesiones ni eliminar si la contraseña es incorrecta, está bloqueado o falta', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
+
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      await expect(service.remove('student-uuid', { password: 'mala' })).rejects.toThrow(ForbiddenException);
+
+      await expect(service.remove('student-uuid', {})).rejects.toThrow(BadRequestException);
+
+      mockPasswordAttempts.registerAttempt.mockRejectedValue(new HttpException({ statusCode: 429 }, 429));
+      await expect(service.remove('student-uuid', { password: 'x' })).rejects.toMatchObject({ status: 429 });
+
+      expect(mockRefreshTokenService.revokeAllForSub).not.toHaveBeenCalled();
+      expect(mockRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('no debería cerrar sesiones si la baja se rechaza por ser responsable de apps (409)', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ password: null }));
+      mockOauthClientRepo.find.mockResolvedValue([{ id: 10, clientName: 'App1' }]);
+
+      await expect(service.remove('student-uuid', {})).rejects.toMatchObject({ status: 409 });
+
+      expect(mockRefreshTokenService.revokeAllForSub).not.toHaveBeenCalled();
+    });
   });
 
   // ── suspend ─────────────────────────────────────────────────────────────────
@@ -575,6 +624,27 @@ describe('StudentService', () => {
     it('debería lanzar NotFoundException si el alumno no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
       await expect(service.suspend('no-existe')).rejects.toThrow(NotFoundException);
+    });
+
+    it('debería cerrar todas las sesiones del propio alumno al suspenderlo', async () => {
+      const entity = makeStudent({ account_status: AccountStatus.Active });
+      mockRepo.findOne.mockResolvedValue(entity);
+      mockRepo.save.mockResolvedValue({ ...entity, account_status: AccountStatus.Suspended });
+      mockOauthClientRepo.find.mockResolvedValue([]);
+
+      await service.suspend('student-uuid');
+
+      expect(mockRefreshTokenService.revokeAllForSub).toHaveBeenCalledWith('student-uuid');
+    });
+
+    it('no debería tocar las sesiones si el alumno ya estaba suspendido o no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ account_status: AccountStatus.Suspended }));
+      await expect(service.suspend('student-uuid')).rejects.toThrow(BadRequestException);
+
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.suspend('no-existe')).rejects.toThrow(NotFoundException);
+
+      expect(mockRefreshTokenService.revokeAllForSub).not.toHaveBeenCalled();
     });
   });
 

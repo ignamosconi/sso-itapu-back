@@ -25,6 +25,7 @@ import { DomainRoleEntity } from './domain-role/entities/domain-role.entity.js';
 import { SpecialtyEntity } from './specialty/entities/specialty.entity.js';
 import { StudentEntity } from './student/entities/student.entity.js';
 import { PasswordResetTokenEntity } from './password-reset-token/entities/password-reset-token.entity.js';
+import { EmailChangeRequestEntity } from './student/entities/email-change-request.entity.js';
 import { MailModule } from './mail/mail.module.js';
 import { SsoInfoModule } from './sso-info/sso-info.module.js';
 import { StatsModule } from './stats/stats.module.js';
@@ -68,6 +69,7 @@ function positiveInt(config: ConfigService, name: string, fallback: number): num
           SpecialtyEntity,
           StudentEntity,
           PasswordResetTokenEntity,
+          EmailChangeRequestEntity,
         ],
         synchronize: false,
         migrations: [join(__dirname, 'database', 'migrations', '*.js')],

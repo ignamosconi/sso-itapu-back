@@ -239,6 +239,9 @@ cp .env.example .env
 | `STUDENT_PASSWORD_LOCK_TTL_MS` | Duración de la ventana de conteo y del bloqueo, en ms. | `900000` |
 | `STUDENT_DELETE_THROTTLE_LIMIT` | Máximo de requests de baja de alumnos por IP en la ventana. | `10` |
 | `STUDENT_DELETE_THROTTLE_TTL_MS` | Ventana del límite anterior, en ms. | `60000` |
+| `EMAIL_CHANGE_TOKEN_TTL_MS` | Vencimiento del link de confirmación de cambio de email, en ms. | `3600000` |
+| `STUDENT_EMAIL_CHANGE_THROTTLE_LIMIT` | Máximo de pedidos de cambio de email por IP en la ventana. | `10` |
+| `STUDENT_EMAIL_CHANGE_THROTTLE_TTL_MS` | Ventana del límite anterior, en ms. | `60000` |
 | `THROTTLE_GLOBAL_LIMIT` | Máximo de requests por IP en la ventana, para endpoints sin límite propio. | `30` |
 | `THROTTLE_GLOBAL_TTL_MS` | Ventana del límite global, en ms. | `60000` |
 | `DB_HOST` | Host de PostgreSQL. | `localhost` |
@@ -324,6 +327,19 @@ La baja de un alumno con contraseña exige ingresar esa contraseña, por lo que 
 - Si una variable de estos límites está definida con un valor inválido, el servidor no arranca.
 - **Despliegue:** `trust proxy` está en `1`. Debe ajustarse al número real de proxies delante del back, y el back no debe ser accesible sin pasar por ellos; de lo contrario la IP puede falsearse con `X-Forwarded-For`.
 
+## Cambio de email de alumnos
+
+Solo alumnos **activos**. Es un proceso de dos pasos:
+
+1. `POST /admin/students/:id/email-change` (admin) con `{ password, newEmail }`. Requiere la contraseña del alumno (debe estar presente) y **comparte con la baja el mismo contador de intentos** (`STUDENT_PASSWORD_*`), así que no se pueden alternar acciones para evadirlo. Envía un link de confirmación al email **nuevo** y un aviso al email actual.
+2. `POST /<AUTH_ROUTE_PATH>/confirm-email-change` (público) con `{ token }`. El link va a `<ADMIN_PANEL_URL>/confirm-email?token=...`. El token es de un solo uso y se guarda hasheado en la tabla `email_change_requests`.
+
+Al confirmar, en una sola transacción: se cambia el email, se **cierran todas las sesiones** del alumno y se invalidan sus links de restaurar contraseña pendientes (viven en el email viejo). Se avisa al email anterior.
+
+- `sub` no cambia nunca, por lo que las apps no pierden al usuario.
+- **Limitación conocida:** los access tokens ya emitidos siguen siendo válidos hasta `JWT_ACCESS_EXPIRES_IN` (15 minutos por defecto) y `/sso/me` devuelve los datos que viajan en el token, así que las apps pueden ver el email anterior hasta entonces.
+- Las solicitudes vencidas se borran con una tarea diaria (3 AM).
+- Suspender o dar de baja a un alumno también cierra sus sesiones (mismo límite de 15 minutos para los access tokens).
 
 ## Panel de administración
 

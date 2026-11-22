@@ -24,6 +24,7 @@ import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm
 import { StudentCredentialsDto } from '../dtos/student-credentials.dto.js';
 import { PasswordLockStatusDto } from '../dtos/password-lock-status.dto.js';
 import { ConfigService } from '@nestjs/config';
+import { html } from '../../mail/utils/email-html.js';
 import * as XLSX from 'xlsx';
 import type { IPasswordAttemptsService } from './password-attempts.service.interface.js';
 
@@ -125,8 +126,7 @@ export class StudentService implements IStudentService {
     await this.mailService.send(
       student.email,
       'Bienvenido/a a ITAPU — Configurá tu contraseña',
-      { html:
-        `
+      { html: html`
         <p>Hola <strong>${student.first_name}</strong>,</p>
         <p>Tu cuenta fue creada en el sistema de ITAPU.</p>
         <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
@@ -144,8 +144,7 @@ export class StudentService implements IStudentService {
     await this.mailService.send(
       student.email,
       'Restaurar contraseña — ITAPU',
-      { html:
-        `
+      { html: html`
         <p>Hola <strong>${student.first_name}</strong>,</p>
         <p>Recibimos una solicitud para restaurar tu contraseña.</p>
         <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
@@ -313,6 +312,11 @@ export class StudentService implements IStudentService {
       await this.passwordAttempts.reset(id);
     }
 
+    // Cortar las sesiones ANTES de borrar: sin esto el alumno dado de baja seguiría renovando tokens
+    // hasta que venza su sesión (el refresh no consulta la base).
+    // LIMITACIÓN CONOCIDA: sus access tokens ya emitidos siguen siendo válidos hasta su vencimiento
+    // (JWT_ACCESS_EXPIRES_IN, por defecto 15 minutos).
+    await this.refreshTokenService.revokeAllForSub(id);
     await this.repo.remove(entity);
   }
 
@@ -330,8 +334,15 @@ export class StudentService implements IStudentService {
     if (entity.account_status === AccountStatus.Suspended) {
       throw new BadRequestException('El alumno ya está suspendido.');
     }
+
     entity.account_status = AccountStatus.Suspended;
     const saved = await this.repo.save(entity);
+
+    // Cerrar las sesiones del propio alumno: la suspensión solo impide loguearse de nuevo, pero un
+    // refresh token vigente seguiría renovando tokens hasta 3 días.
+    // LIMITACIÓN CONOCIDA: sus access tokens ya emitidos siguen siendo válidos hasta su vencimiento
+    // (JWT_ACCESS_EXPIRES_IN, por defecto 15 minutos).
+    await this.refreshTokenService.revokeAllForSub(id);
 
     // Cascade: suspender apps y revocar sesiones activas
     const apps = await this.oauthClientRepo.find({ where: { responsibleUserId: id } });

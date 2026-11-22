@@ -153,6 +153,12 @@ export class StudentService implements IStudentService {
     );
   }
 
+  // ── Search helpers ──────────────────────────────────────────────────────────
+  
+  private escapeLike(value: string): string {
+    return value.replace(/[\\%_]/g, '\\$&');
+  }
+
   // ── CRUD ─────────────────────────────────────────────────────────────────
 
   async findAll(filters: StudentFiltersDto): Promise<{ data: StudentResponseDto[]; total: number }> {
@@ -166,10 +172,24 @@ export class StudentService implements IStudentService {
       .take(limit);
 
     if (filters.search) {
-      qb.andWhere(
-        '(s.username ILIKE :q OR s.first_name ILIKE :q OR s.last_name ILIKE :q OR s.email ILIKE :q)',
-        { q: `%${filters.search}%` },
-      );
+      // Cada palabra debe aparecer en usuario, nombre, apellido o DNI (sin tildes).
+      // El email NO se busca a propósito.
+      const words = filters.search.normalize('NFC').trim().split(/\s+/).filter(Boolean);
+      words.forEach((word, i) => {
+        const params: Record<string, string> = { [`q${i}`]: `%${this.escapeLike(word)}%` };
+        const conditions = [
+          `unaccent(s.username) ILIKE unaccent(:q${i})`,
+          `unaccent(s.first_name) ILIKE unaccent(:q${i})`,
+          `unaccent(s.last_name) ILIKE unaccent(:q${i})`,
+        ];
+        // Solo si la palabra tiene dígitos: con "%%" el DNI coincidiría siempre.
+        const digits = word.replace(/\D/g, '');
+        if (digits) {
+          conditions.push(`CAST(s.dni AS TEXT) LIKE :d${i}`);
+          params[`d${i}`] = `%${digits}%`;
+        }
+        qb.andWhere(`(${conditions.join(' OR ')})`, params);
+      });
     }
     if (filters.domainRoleId) qb.andWhere('s.domain_role_id = :rid', { rid: filters.domainRoleId });
     if (filters.specialtyId) qb.andWhere('s.specialty_id = :sid', { sid: filters.specialtyId });

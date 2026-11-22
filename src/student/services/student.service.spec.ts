@@ -173,6 +173,81 @@ describe('StudentService', () => {
 
       expect(qb.take).toHaveBeenCalledWith(100);
     });
+
+    it('debería buscar por usuario, nombre, apellido y DNI sin tildes, con una condición por palabra', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+  
+      await service.findAll({ search: 'Lucía Pérez' });
+  
+      expect(qb.andWhere).toHaveBeenCalledTimes(2);
+      const [sql, params] = qb.andWhere.mock.calls[0];
+      expect(sql).toContain('unaccent(s.username) ILIKE unaccent(:q0)');
+      expect(sql).toContain('unaccent(s.first_name) ILIKE unaccent(:q0)');
+      expect(sql).toContain('unaccent(s.last_name) ILIKE unaccent(:q0)');
+      expect(params).toEqual({ q0: '%Lucía%' });
+      expect(qb.andWhere.mock.calls[1][1]).toEqual({ q1: '%Pérez%' });
+    });
+  
+    it('no debería buscar por email', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+  
+      await service.findAll({ search: 'alumno' });
+  
+      expect(qb.andWhere.mock.calls[0][0]).not.toContain('email');
+    });
+  
+    it('debería buscar por DNI usando solo los dígitos de la palabra (admite puntos)', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+  
+      await service.findAll({ search: '44.244' });
+  
+      const [sql, params] = qb.andWhere.mock.calls[0];
+      expect(sql).toContain('CAST(s.dni AS TEXT) LIKE :d0');
+      expect(params).toEqual({ q0: '%44.244%', d0: '%44244%' });
+    });
+  
+    it('no debería buscar por DNI si la palabra no tiene dígitos', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+  
+      await service.findAll({ search: 'lucia' });
+  
+      const [sql, params] = qb.andWhere.mock.calls[0];
+      expect(sql).not.toContain('dni');
+      expect(params).not.toHaveProperty('d0');
+    });
+  
+    it('debería escapar %, _ y \\ para buscarlos literalmente', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+  
+      await service.findAll({ search: 'a%b_c\\d' });
+  
+      expect(qb.andWhere.mock.calls[0][1].q0).toBe('%a\\%b\\_c\\\\d%');
+    });
+  
+    it('no debería agregar condiciones si la búsqueda es solo espacios', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+  
+      await service.findAll({ search: '   ' });
+  
+      expect(qb.andWhere).not.toHaveBeenCalled();
+    });
+  
+    it('debería combinar la búsqueda con los demás filtros', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+  
+      await service.findAll({ search: 'lucia', domainRoleId: 1, accountStatus: AccountStatus.Active });
+  
+      expect(qb.andWhere).toHaveBeenCalledTimes(3);
+      expect(qb.andWhere).toHaveBeenCalledWith('s.domain_role_id = :rid', { rid: 1 });
+      expect(qb.andWhere).toHaveBeenCalledWith('s.account_status = :st', { st: AccountStatus.Active });
+    });
   });
 
   // ── findOne ─────────────────────────────────────────────────────────────────

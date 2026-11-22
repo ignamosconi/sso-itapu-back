@@ -1,6 +1,6 @@
 import { SkipThrottle } from '@nestjs/throttler';
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Inject, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Inject, UseGuards, Request, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IOAuthClientController } from './oauth-client.controller.interface.js';
 import type { IOAuthClientService } from '../services/oauth-client.service.interface.js';
 import { CreateOAuthClientDto } from '../dtos/create-oauth-client.dto.js';
@@ -53,9 +53,13 @@ export class OAuthClientController implements IOAuthClientController {
   })
   @ApiResponse({ status: 200, type: OAuthClientInfoDto })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
+  @ApiQuery({ name: 'redirect_uri', required: false, description: 'Si se envía, la respuesta incluye redirectUriValid.' })
   @Get(':id/info')
-  findInfo(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientInfoDto> {
-    return this.oauthClientService.findInfo(id);
+  findInfo(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('redirect_uri') redirectUri?: string,
+  ): Promise<OAuthClientInfoDto> {
+    return this.oauthClientService.findInfo(id, redirectUri);
   }
 
   @ApiOperation({ summary: 'Crear nuevo cliente OAuth' })

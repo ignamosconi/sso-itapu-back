@@ -137,6 +137,44 @@ describe('OAuthClientService', () => {
     });
   });
 
+  describe('findInfo', () => {
+
+    it('debería informar redirectUriValid true si el redirect_uri está registrado', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1, 'https://app.com/callback');
+      expect(result.redirectUriValid).toBe(true);
+    });
+
+    it('debería informar redirectUriValid false si el redirect_uri no está registrado', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1, 'https://otro.com/callback');
+      expect(result.redirectUriValid).toBe(false);
+    });
+
+    it('no debería informar redirectUriValid si no se envía redirect_uri', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1);
+      expect(result.redirectUriValid).toBeUndefined();
+    });
+
+    it('debería retornar clientName e isActive de un cliente activo', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1);
+      expect(result).toEqual({ clientName: 'TestApp', isActive: true });
+    });
+
+    it('debería retornar isActive false si el cliente está suspendido', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient({ isActive: false }));
+      const result = await service.findInfo(1);
+      expect(result).toEqual({ clientName: 'TestApp', isActive: false });
+    });
+
+    it('debería lanzar NotFoundException si el cliente no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.findInfo(999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('validateClient', () => {
     it('debería retornar true con credenciales válidas y cliente activo', async () => {
       mockRepo.findOne.mockResolvedValue(makeClient());

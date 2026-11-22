@@ -216,7 +216,7 @@ export class AuthService implements IAuthService {
     if (!client) throw new UnauthorizedException('client_id inválido.');
     if (!client.isActive) throw new UnauthorizedException('La aplicación está suspendida.');
     if (!client.redirectUris.includes(loginDto.redirect_uri)) {
-      throw new UnauthorizedException('redirect_uri no coincide con las registradas.');
+      throw new UnauthorizedException('La URL de redirección en el link no coincide con las registradas. Contactá al desarrollador de la aplicación para que lo resuelva.');
     }
     const userInfo = await this.validateAndGetUserInfo(loginDto);
     const code = this.codeService.generate(userInfo, clientId);

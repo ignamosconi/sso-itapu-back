@@ -9,7 +9,7 @@ import { RequestWithAdmin } from '../../admin-auth/controllers/admin-auth.contro
 export interface IOAuthClientController {
   findAll(): Promise<OAuthClientResponseDto[]>;
   findOne(id: number): Promise<OAuthClientResponseDto>;
-  findInfo(id: number): Promise<OAuthClientInfoDto>;
+  findInfo(id: number, redirectUri?: string): Promise<OAuthClientInfoDto>;
   create(req: RequestWithAdmin, dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto>;
   update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto>;
   remove(id: number): Promise<void>;

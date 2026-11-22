@@ -45,19 +45,41 @@
 
     if (!clientId || !redirectUri) {
       document.getElementById('screen-username').style.display = 'none';
-      showError('El enlace de acceso no es válido. Contactá al administrador de la aplicación.');
+      showError('El enlace de acceso no es válido. Contactá a un administrador.');
       return;
     }
 
-    fetch(`/admin/clients/${clientId}/info`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.clientName) {
+    function blockLogin(msg) {
+      document.getElementById('loginSub').style.display = 'none';
+      showError(msg);
+    }
+
+    fetch(`/admin/clients/${encodeURIComponent(clientId)}/info?redirect_uri=${encodeURIComponent(redirectUri)}`)
+      .then(async r => {
+        if (r.status === 400 || r.status === 404) {
+          blockLogin('La aplicación no existe. Contactá a un administrador.');
+          return;
+        }
+        if (!r.ok) {
+          blockLogin('No pudimos verificar la aplicación. Intentá de nuevo más tarde.');
+          return;
+        }
+        const data = await r.json();
+        if (data.isActive === false) {
+          blockLogin('La aplicación está suspendida. Contactá a un administrador.');
+          return;
+        }
+        if (data.redirectUriValid === false) {
+          blockLogin('La URL de redirección en el link no coincide con las registradas. Contactá al desarrollador de la aplicación para que lo resuelva.');
+          return;
+        }
+        if (data.clientName) {
           document.getElementById('loginSub').textContent =
             `Ingresá a ${data.clientName} con tu usuario.`;
         }
+        showScreen('screen-username');
       })
-      .catch(() => {});
+      .catch(() => blockLogin('Error de red. Intentá de nuevo.'));
   });
 
   window.addEventListener('pageshow', e => {

@@ -3,6 +3,7 @@ import { UpdateStudentDto } from '../dtos/update-student.dto.js';
 import { DeleteStudentDto } from '../dtos/delete-student.dto.js';
 import { StudentResponseDto } from '../dtos/student-response.dto.js';
 import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
+import { PasswordLockStatusDto } from '../dtos/password-lock-status.dto.js';
 import { ImportPreviewResultDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { StudentCredentialsDto } from '../dtos/student-credentials.dto.js';
@@ -13,6 +14,7 @@ export interface IStudentService {
   create(dto: CreateStudentDto): Promise<StudentResponseDto>;
   update(id: string, dto: UpdateStudentDto): Promise<StudentResponseDto>;
   remove(id: string, dto: DeleteStudentDto): Promise<void>;
+  getPasswordLockStatus(id: string): Promise<PasswordLockStatusDto>;
   suspend(id: string): Promise<StudentResponseDto>;
   activate(id: string): Promise<StudentResponseDto>;
   parseImportPreview(csvBuffer: Buffer): Promise<ImportPreviewResultDto>;

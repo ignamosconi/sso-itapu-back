@@ -7,6 +7,7 @@ import { RefreshTokenModule } from '../refresh-token/refresh-token.module.js';
 import { DomainRoleEntity } from '../domain-role/entities/domain-role.entity.js';
 import { SpecialtyEntity } from '../specialty/entities/specialty.entity.js';
 import { StudentService } from './services/student.service.js';
+import { PasswordAttemptsService } from './services/password-attempts.service.js';
 import { StudentController } from './controllers/student.controller.js';
 import { PasswordResetTokenModule } from '../password-reset-token/password-reset-token.module.js';
 import { MailModule } from '../mail/mail.module.js';
@@ -22,7 +23,11 @@ import { JwtModule } from '@nestjs/jwt';
     RefreshTokenModule,
   ],
   controllers: [StudentController],
-  providers: [{ provide: 'IStudentService', useClass: StudentService }],
+  providers: [
+    { provide: 'IStudentService', useClass: StudentService },
+    // RedisModule es @Global(), por eso no hace falta importarlo acá.
+    { provide: 'IPasswordAttemptsService', useClass: PasswordAttemptsService },
+  ],
   exports: ['IStudentService'],
 })
 export class StudentModule {}

@@ -235,6 +235,12 @@ cp .env.example .env
 | `REDIS_PASSWORD` | Password de Redis. | — |
 | `PENDING_2FA_TTL_MS` | TTL del challenge 2FA pendiente en ms. | `180000` |
 | `PENDING_2FA_MAX_ATTEMPTS` | Intentos fallidos de TOTP antes de invalidar el challenge. | `5` |
+| `STUDENT_PASSWORD_MAX_ATTEMPTS` | Intentos de contraseña por alumno antes de bloquear la baja. | `5` |
+| `STUDENT_PASSWORD_LOCK_TTL_MS` | Duración de la ventana de conteo y del bloqueo, en ms. | `900000` |
+| `STUDENT_DELETE_THROTTLE_LIMIT` | Máximo de requests de baja de alumnos por IP en la ventana. | `10` |
+| `STUDENT_DELETE_THROTTLE_TTL_MS` | Ventana del límite anterior, en ms. | `60000` |
+| `THROTTLE_GLOBAL_LIMIT` | Máximo de requests por IP en la ventana, para endpoints sin límite propio. | `30` |
+| `THROTTLE_GLOBAL_TTL_MS` | Ventana del límite global, en ms. | `60000` |
 | `DB_HOST` | Host de PostgreSQL. | `localhost` |
 | `DB_PORT` | Puerto de PostgreSQL. | `5433` |
 | `DB_USERNAME` | Usuario de PostgreSQL. | `postgres` |
@@ -300,6 +306,23 @@ npm run lint         # lint
 http://localhost:3000/docs
 
 Requiere `SWAGGER_USER` / `SWAGGER_PASSWORD` del `.env`.
+
+
+## Protección contra fuerza bruta en la baja de alumnos
+
+La baja de un alumno con contraseña exige ingresar esa contraseña, por lo que el endpoint `DELETE /admin/students/:id` tiene dos límites independientes, ambos configurables por entorno:
+
+| Límite | Alcance | Por defecto | Respuesta |
+|--------|---------|-------------|-----------|
+| Requests de baja | Por IP | 10 por minuto | `429` con header `Retry-After` |
+| Intentos de contraseña | Por alumno | 5 cada 15 minutos | `403` con `attemptsRemaining`; al agotarse, `429` con `code: PASSWORD_ATTEMPTS_LOCKED` y `retryAfterSeconds` |
+
+- El contador de intentos vive en Redis y se incrementa **antes** de comparar la contraseña, por lo que los intentos en paralelo también cuentan.
+- Una contraseña correcta durante un bloqueo **no** lo levanta.
+- `GET /admin/students/:id/password-lock` informa si un alumno está bloqueado sin consumir intentos (lo usa el panel para mostrar la espera al abrir el modal).
+- Para levantar un bloqueo manualmente: `DEL student:password-attempts:<id del alumno>` en Redis.
+- Si una variable de estos límites está definida con un valor inválido, el servidor no arranca.
+- **Despliegue:** `trust proxy` está en `1`. Debe ajustarse al número real de proxies delante del back, y el back no debe ser accesible sin pasar por ellos; de lo contrario la IP puede falsearse con `X-Forwarded-For`.
 
 
 ## Panel de administración

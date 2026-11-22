@@ -5,9 +5,7 @@ jest.mock('bcrypt', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  NotFoundException, ConflictException, BadRequestException, UnauthorizedException,
-} from '@nestjs/common';
+import { NotFoundException, ConflictException, BadRequestException, UnauthorizedException, ForbiddenException, } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { StudentService } from './student.service.js';
@@ -73,6 +71,7 @@ describe('StudentService', () => {
   let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
   let mockOauthClientRepo: jest.Mocked<Record<string, jest.Mock>>;
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
+  let mockPasswordAttempts: jest.Mocked<Record<string, jest.Mock>>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -117,6 +116,12 @@ describe('StudentService', () => {
       revokeAllForClient: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockPasswordAttempts = {
+      registerAttempt: jest.fn().mockResolvedValue({ attemptsRemaining: 4, retryAfterSeconds: 880 }),
+      getLockStatus: jest.fn(),
+      reset: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StudentService,
@@ -127,6 +132,7 @@ describe('StudentService', () => {
         { provide: 'IMailService', useValue: mockMailService },
         { provide: getRepositoryToken(OAuthClientEntity), useValue: mockOauthClientRepo },
         { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
+        { provide: 'IPasswordAttemptsService', useValue: mockPasswordAttempts },
         {
           provide: ConfigService,
           useValue: {
@@ -437,18 +443,95 @@ describe('StudentService', () => {
       await expect(service.remove('student-uuid', {})).rejects.toThrow(BadRequestException);
     });
 
-    it('debería lanzar UnauthorizedException si la contraseña es incorrecta', async () => {
+    it('debería lanzar ForbiddenException con los intentos restantes si la contraseña es incorrecta', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent());
       mockOauthClientRepo.find.mockResolvedValue([]);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      await expect(service.remove('student-uuid', { password: 'incorrecta' }))
-        .rejects.toThrow(UnauthorizedException);
+      const attempt = service.remove('student-uuid', { password: 'incorrecta' });
+
+      await expect(attempt).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { statusCode: 403, attemptsRemaining: 4, retryAfterSeconds: 880 },
+      });
     });
 
     it('debería lanzar NotFoundException si el alumno no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
       await expect(service.remove('no-existe', {})).rejects.toThrow(NotFoundException);
+    });
+
+    it('debería registrar el intento antes de comparar la contraseña y reiniciar el contador si es correcta', async () => {
+      const order: string[] = [];
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
+      mockPasswordAttempts.registerAttempt.mockImplementation(() => {
+        order.push('register');
+        return Promise.resolve({ attemptsRemaining: 4, retryAfterSeconds: 880 });
+      });
+      (bcrypt.compare as jest.Mock).mockImplementation(() => {
+        order.push('compare');
+        return Promise.resolve(true);
+      });
+      mockPasswordAttempts.reset.mockImplementation(() => {
+        order.push('reset');
+        return Promise.resolve();
+      });
+      mockRepo.remove.mockResolvedValue({});
+
+      await service.remove('student-uuid', { password: 'correcta' });
+
+      expect(order).toEqual(['register', 'compare', 'reset']);
+      expect(mockPasswordAttempts.registerAttempt).toHaveBeenCalledWith('student-uuid');
+      expect(mockPasswordAttempts.reset).toHaveBeenCalledWith('student-uuid');
+      expect(mockRepo.remove).toHaveBeenCalled();
+    });
+
+    it('no debería reiniciar el contador si la contraseña es incorrecta', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.remove('student-uuid', { password: 'incorrecta' }))
+        .rejects.toThrow(ForbiddenException);
+
+      expect(mockPasswordAttempts.registerAttempt).toHaveBeenCalledTimes(1);
+      expect(mockPasswordAttempts.reset).not.toHaveBeenCalled();
+      expect(mockRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('debería cortar con 429 sin comparar la contraseña ni eliminar si el alumno está bloqueado', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValue([]);
+      mockPasswordAttempts.registerAttempt.mockRejectedValue(
+        new HttpException({ statusCode: 429, code: 'PASSWORD_ATTEMPTS_LOCKED' }, 429),
+      );
+
+      await expect(service.remove('student-uuid', { password: 'x' })).rejects.toMatchObject({ status: 429 });
+
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+      expect(mockRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('no debería registrar intentos si el alumno no tiene contraseña', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ password: null }));
+      mockOauthClientRepo.find.mockResolvedValue([]);
+      mockRepo.remove.mockResolvedValue({});
+
+      await service.remove('student-uuid', {});
+
+      expect(mockPasswordAttempts.registerAttempt).not.toHaveBeenCalled();
+    });
+
+    it('no debería registrar intentos si falta la contraseña ni si hay conflicto 409', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockOauthClientRepo.find.mockResolvedValueOnce([]);
+      await expect(service.remove('student-uuid', {})).rejects.toThrow(BadRequestException);
+
+      mockOauthClientRepo.find.mockResolvedValueOnce([{ id: 10, clientName: 'App1' }]);
+      await expect(service.remove('student-uuid', { password: 'x' })).rejects.toMatchObject({ status: 409 });
+
+      expect(mockPasswordAttempts.registerAttempt).not.toHaveBeenCalled();
     });
   });
 
@@ -643,6 +726,31 @@ describe('StudentService', () => {
         expect.stringContaining('contraseña'),
         expect.objectContaining({ html: expect.any(String) }),
       );
+    });
+  });
+
+  // ── getPasswordLockStatus ───────────────────────────────────────────────────
+  describe('getPasswordLockStatus', () => {
+    it('debería devolver el estado del bloqueo del servicio de intentos', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockPasswordAttempts.getLockStatus.mockResolvedValue({ locked: true, retryAfterSeconds: 300 });
+
+      await expect(service.getPasswordLockStatus('student-uuid'))
+        .resolves.toEqual({ locked: true, retryAfterSeconds: 300 });
+      expect(mockPasswordAttempts.getLockStatus).toHaveBeenCalledWith('student-uuid');
+    });
+
+    it('debería informar sin bloqueo (sin consultar Redis) si el alumno no tiene contraseña', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ password: null }));
+
+      await expect(service.getPasswordLockStatus('student-uuid'))
+        .resolves.toEqual({ locked: false, retryAfterSeconds: 0 });
+      expect(mockPasswordAttempts.getLockStatus).not.toHaveBeenCalled();
+    });
+
+    it('debería lanzar NotFoundException si el alumno no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.getPasswordLockStatus('no-existe')).rejects.toThrow(NotFoundException);
     });
   });
 

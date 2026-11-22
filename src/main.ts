@@ -86,6 +86,9 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.ADMIN_PANEL_URL ?? 'http://localhost:5173',
     credentials: true,
+    // Sin esto, el navegador no deja leer el header Retry-After de los 429 y el
+    // panel no puede mostrar cuánto hay que esperar.
+    exposedHeaders: ['Retry-After'],
   });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));

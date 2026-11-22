@@ -1,7 +1,7 @@
 import {
   Injectable, NotFoundException, ConflictException,
   BadRequestException, UnauthorizedException, Inject,
-  HttpException, HttpStatus,
+  HttpException, HttpStatus, ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,8 +22,10 @@ import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto, ImportPreviewRowDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { StudentCredentialsDto } from '../dtos/student-credentials.dto.js';
+import { PasswordLockStatusDto } from '../dtos/password-lock-status.dto.js';
 import { ConfigService } from '@nestjs/config';
 import * as XLSX from 'xlsx';
+import type { IPasswordAttemptsService } from './password-attempts.service.interface.js';
 
 @Injectable()
 export class StudentService implements IStudentService {
@@ -45,6 +47,8 @@ export class StudentService implements IStudentService {
     private readonly passwordResetTokenService: IPasswordResetTokenService,
     @Inject('IMailService')
     private readonly mailService: IMailService,
+    @Inject('IPasswordAttemptsService')
+    private readonly passwordAttempts: IPasswordAttemptsService,
     private readonly configService: ConfigService,
   ) {
     this.adminPanelUrl = this.configService.getOrThrow<string>('ADMIN_PANEL_URL');
@@ -292,11 +296,32 @@ export class StudentService implements IStudentService {
       if (!dto.password) {
         throw new BadRequestException('Este alumno tiene contraseña configurada. Debés ingresar su contraseña para confirmar la baja.');
       }
+      // Se registra el intento ANTES de comparar: así los intentos en paralelo también cuentan
+      // y, al superar el máximo, se corta con 429 sin llegar a ejecutar bcrypt.
+      const attempt = await this.passwordAttempts.registerAttempt(id);
       const valid = await bcrypt.compare(dto.password, entity.password);
-      if (!valid) throw new UnauthorizedException('La contraseña ingresada es incorrecta.');
+      if (!valid) {
+        // 403 y no 401: el 401 del panel significa "tu sesión de admin venció" y hace que el front
+        // renueve el token y REPITA el request, lo que gastaría dos intentos por cada contraseña mal escrita.
+        throw new ForbiddenException({
+          statusCode: HttpStatus.FORBIDDEN,
+          message: 'La contraseña ingresada es incorrecta.',
+          attemptsRemaining: attempt.attemptsRemaining,
+          retryAfterSeconds: attempt.retryAfterSeconds,
+        });
+      }
+      await this.passwordAttempts.reset(id);
     }
 
     await this.repo.remove(entity);
+  }
+
+  async getPasswordLockStatus(id: string): Promise<PasswordLockStatusDto> {
+    const entity = await this.repo.findOne({ where: { id } });
+    if (!entity) throw new NotFoundException(`Alumno con id ${id} no encontrado.`);
+    // Sin contraseña no hay nada que adivinar: la baja no pide contraseña.
+    if (entity.password === null) return { locked: false, retryAfterSeconds: 0 };
+    return this.passwordAttempts.getLockStatus(id);
   }
 
   async suspend(id: string): Promise<StudentResponseDto> {

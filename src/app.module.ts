@@ -31,6 +31,15 @@ import { StatsModule } from './stats/stats.module.js';
 import { AdminSeeder } from './database/seeders/admin.seeder.js';
 import { ScheduleModule } from '@nestjs/schedule';
 
+function positiveInt(config: ConfigService, name: string, fallback: number): number {
+  const raw = config.get<string>(name);
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`[Config] ${name} debe ser un entero positivo (valor recibido: "${raw}").`);
+  }
+  return value;
+}
 
 @Module({
   imports: [
@@ -69,13 +78,17 @@ import { ScheduleModule } from '@nestjs/schedule';
 
     ScheduleModule.forRoot(), //Para limpiar la tabla de refresh tokens
 
-    ThrottlerModule.forRoot([
-      {
-        name: 'global',
-        ttl: 60000,   // ventana de 60 segundos
-        limit: 30,    // máximo 30 requests por IP en esa ventana (endpoints generales)
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => [
+        {
+          // Tiene que llamarse 'default': los @Throttle/@SkipThrottle de los controllers apuntan a ese nombre.
+          name: 'default',
+          ttl: positiveInt(configService, 'THROTTLE_GLOBAL_TTL_MS', 60_000),
+          limit: positiveInt(configService, 'THROTTLE_GLOBAL_LIMIT', 30),
+        },
+      ],
+    }),
     AuthModule,
     AdminModule,
     AdminAuthModule,

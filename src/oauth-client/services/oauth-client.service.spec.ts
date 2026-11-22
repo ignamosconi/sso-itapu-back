@@ -137,6 +137,25 @@ describe('OAuthClientService', () => {
     });
   });
 
+  describe('findInfo', () => {
+    it('debería retornar clientName e isActive de un cliente activo', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1);
+      expect(result).toEqual({ clientName: 'TestApp', isActive: true });
+    });
+
+    it('debería retornar isActive false si el cliente está suspendido', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient({ isActive: false }));
+      const result = await service.findInfo(1);
+      expect(result).toEqual({ clientName: 'TestApp', isActive: false });
+    });
+
+    it('debería lanzar NotFoundException si el cliente no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.findInfo(999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('validateClient', () => {
     it('debería retornar true con credenciales válidas y cliente activo', async () => {
       mockRepo.findOne.mockResolvedValue(makeClient());

@@ -1,4 +1,4 @@
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Inject,
   UseGuards, ParseUUIDPipe, Query, UseInterceptors, UploadedFile,
@@ -16,11 +16,19 @@ import { CreateStudentDto } from '../dtos/create-student.dto.js';
 import { UpdateStudentDto } from '../dtos/update-student.dto.js';
 import { DeleteStudentDto } from '../dtos/delete-student.dto.js';
 import { StudentResponseDto } from '../dtos/student-response.dto.js';
+import { PasswordLockStatusDto } from '../dtos/password-lock-status.dto.js';
 import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
 import 'multer';   //Si no está esta línea, se rompe el multer abajo.
+
+// Lee un entero positivo del entorno cada vez que se evalúa el límite. Si la variable no
+// está o es inválida se usa el valor por defecto (que es el más estricto, no el más laxo).
+const envInt = (name: string, fallback: number) => (): number => {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+};
 
 @ApiTags('Admin — Padrón de usuarios')
 @ApiBearerAuth('admin-jwt')
@@ -72,16 +80,49 @@ export class StudentController implements IStudentController {
     summary: 'Dar de baja a un usuario',
     description:
       'Si el usuario tiene contraseña, se requiere ingresarla para confirmar la baja. ' +
-      'El alumno debe estar presente al momento de la baja.',
+      'El alumno debe estar presente al momento de la baja. ' +
+      'Protegido con dos límites configurables por entorno: requests por minuto por IP ' +
+      '(STUDENT_DELETE_THROTTLE_*) e intentos de contraseña por alumno (STUDENT_PASSWORD_*).',
   })
   @ApiResponse({ status: 200, description: 'Usuario dado de baja' })
-  @ApiResponse({ status: 401, description: 'Contraseña incorrecta' })
+  @ApiResponse({
+    status: 403,
+    description: 'Contraseña del alumno incorrecta (body: attemptsRemaining y retryAfterSeconds)',
+  })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Demasiados requests (header Retry-After) o demasiados intentos de contraseña ' +
+      'para este alumno (body: code PASSWORD_ATTEMPTS_LOCKED y retryAfterSeconds)',
+  })
+  // El @SkipThrottle() de la clase tiene prioridad sobre @Throttle: hay que
+  // reactivar explícitamente el throttler en este endpoint.
+  @SkipThrottle({ default: false })
+  @Throttle({
+    default: {
+      ttl: envInt('STUDENT_DELETE_THROTTLE_TTL_MS', 60_000),
+      limit: envInt('STUDENT_DELETE_THROTTLE_LIMIT', 10),
+    },
+  })
   @Delete(':id')
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DeleteStudentDto,
   ): Promise<void> {
     return this.service.remove(id, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Ver si la baja de un alumno está bloqueada por intentos de contraseña',
+    description:
+      'No consume intentos. Lo usa el panel al abrir el modal de baja para mostrar la espera ' +
+      'de inmediato en lugar de hacer que el admin gaste un intento para descubrirla.',
+  })
+  @ApiResponse({ status: 200, type: PasswordLockStatusDto })
+  @ApiResponse({ status: 404, description: 'Alumno no encontrado' })
+  @Get(':id/password-lock')
+  getPasswordLock(@Param('id', ParseUUIDPipe) id: string): Promise<PasswordLockStatusDto> {
+    return this.service.getPasswordLockStatus(id);
   }
 
   @ApiOperation({ summary: 'Suspender cuenta de usuario' })

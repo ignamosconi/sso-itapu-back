@@ -1,9 +1,13 @@
-import { IsOptional, IsString, IsInt, Min, IsIn } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsIn, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class StudentFiltersDto {
-  @ApiPropertyOptional() @IsOptional() @IsString() search?: string;
+  @ApiPropertyOptional({ maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() domainRoleId?: number;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() specialtyId?: number;
   @ApiPropertyOptional({ enum: ['active', 'suspended', 'pending_registration'] })

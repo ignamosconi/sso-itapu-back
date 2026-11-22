@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, GoneException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { randomBytes, createHash } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PasswordResetTokenEntity } from '../entities/password-reset-token.entity.js';
@@ -71,5 +71,10 @@ export class PasswordResetTokenService implements IPasswordResetTokenService {
 
     const raw = result.raw as PasswordResetTokenEntity[];
     return { studentId: raw[0].studentId, purpose: raw[0].purpose };
+  }
+
+  async invalidateAllForStudent(studentId: string, manager?: EntityManager): Promise<void> {
+    const repo = manager ? manager.getRepository(PasswordResetTokenEntity) : this.repo;
+    await repo.delete({ studentId, used: false });
   }
 }

@@ -7,6 +7,7 @@ import { StudentResponseDto } from '../dtos/student-response.dto.js';
 import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
+import { PasswordLockStatusDto } from '../dtos/password-lock-status.dto.js';
 
 export interface IStudentController {
   findAll(filters: StudentFiltersDto): Promise<{ data: StudentResponseDto[]; total: number }>;
@@ -14,6 +15,7 @@ export interface IStudentController {
   create(dto: CreateStudentDto): Promise<StudentResponseDto>;
   update(id: string, dto: UpdateStudentDto): Promise<StudentResponseDto>;
   remove(id: string, dto: DeleteStudentDto): Promise<void>;
+  getPasswordLock(id: string): Promise<PasswordLockStatusDto>;
   suspend(id: string): Promise<StudentResponseDto>;
   activate(id: string): Promise<StudentResponseDto>;
   importPreview(file: Express.Multer.File): Promise<ImportPreviewResultDto>;

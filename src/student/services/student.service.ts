@@ -1,7 +1,7 @@
 import {
   Injectable, NotFoundException, ConflictException,
   BadRequestException, UnauthorizedException, Inject,
-  HttpException, HttpStatus,
+  HttpException, HttpStatus, ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,8 +22,11 @@ import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto, ImportPreviewRowDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { StudentCredentialsDto } from '../dtos/student-credentials.dto.js';
+import { PasswordLockStatusDto } from '../dtos/password-lock-status.dto.js';
 import { ConfigService } from '@nestjs/config';
+import { html } from '../../mail/utils/email-html.js';
 import * as XLSX from 'xlsx';
+import type { IPasswordAttemptsService } from './password-attempts.service.interface.js';
 
 @Injectable()
 export class StudentService implements IStudentService {
@@ -45,6 +48,8 @@ export class StudentService implements IStudentService {
     private readonly passwordResetTokenService: IPasswordResetTokenService,
     @Inject('IMailService')
     private readonly mailService: IMailService,
+    @Inject('IPasswordAttemptsService')
+    private readonly passwordAttempts: IPasswordAttemptsService,
     private readonly configService: ConfigService,
   ) {
     this.adminPanelUrl = this.configService.getOrThrow<string>('ADMIN_PANEL_URL');
@@ -121,8 +126,7 @@ export class StudentService implements IStudentService {
     await this.mailService.send(
       student.email,
       'Bienvenido/a a ITAPU — Configurá tu contraseña',
-      { html:
-        `
+      { html: html`
         <p>Hola <strong>${student.first_name}</strong>,</p>
         <p>Tu cuenta fue creada en el sistema de ITAPU.</p>
         <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
@@ -140,8 +144,7 @@ export class StudentService implements IStudentService {
     await this.mailService.send(
       student.email,
       'Restaurar contraseña — ITAPU',
-      { html:
-        `
+      { html: html`
         <p>Hola <strong>${student.first_name}</strong>,</p>
         <p>Recibimos una solicitud para restaurar tu contraseña.</p>
         <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
@@ -151,6 +154,12 @@ export class StudentService implements IStudentService {
         `,
       }
     );
+  }
+
+  // ── Search helpers ──────────────────────────────────────────────────────────
+  
+  private escapeLike(value: string): string {
+    return value.replace(/[\\%_]/g, '\\$&');
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -166,10 +175,24 @@ export class StudentService implements IStudentService {
       .take(limit);
 
     if (filters.search) {
-      qb.andWhere(
-        '(s.username ILIKE :q OR s.first_name ILIKE :q OR s.last_name ILIKE :q OR s.email ILIKE :q)',
-        { q: `%${filters.search}%` },
-      );
+      // Cada palabra debe aparecer en usuario, nombre, apellido o DNI (sin tildes).
+      // El email NO se busca a propósito.
+      const words = filters.search.normalize('NFC').trim().split(/\s+/).filter(Boolean);
+      words.forEach((word, i) => {
+        const params: Record<string, string> = { [`q${i}`]: `%${this.escapeLike(word)}%` };
+        const conditions = [
+          `unaccent(s.username) ILIKE unaccent(:q${i})`,
+          `unaccent(s.first_name) ILIKE unaccent(:q${i})`,
+          `unaccent(s.last_name) ILIKE unaccent(:q${i})`,
+        ];
+        // Solo si la palabra tiene dígitos: con "%%" el DNI coincidiría siempre.
+        const digits = word.replace(/\D/g, '');
+        if (digits) {
+          conditions.push(`CAST(s.dni AS TEXT) LIKE :d${i}`);
+          params[`d${i}`] = `%${digits}%`;
+        }
+        qb.andWhere(`(${conditions.join(' OR ')})`, params);
+      });
     }
     if (filters.domainRoleId) qb.andWhere('s.domain_role_id = :rid', { rid: filters.domainRoleId });
     if (filters.specialtyId) qb.andWhere('s.specialty_id = :sid', { sid: filters.specialtyId });
@@ -272,11 +295,37 @@ export class StudentService implements IStudentService {
       if (!dto.password) {
         throw new BadRequestException('Este alumno tiene contraseña configurada. Debés ingresar su contraseña para confirmar la baja.');
       }
+      // Se registra el intento ANTES de comparar: así los intentos en paralelo también cuentan
+      // y, al superar el máximo, se corta con 429 sin llegar a ejecutar bcrypt.
+      const attempt = await this.passwordAttempts.registerAttempt(id);
       const valid = await bcrypt.compare(dto.password, entity.password);
-      if (!valid) throw new UnauthorizedException('La contraseña ingresada es incorrecta.');
+      if (!valid) {
+        // 403 y no 401: el 401 del panel significa "tu sesión de admin venció" y hace que el front
+        // renueve el token y REPITA el request, lo que gastaría dos intentos por cada contraseña mal escrita.
+        throw new ForbiddenException({
+          statusCode: HttpStatus.FORBIDDEN,
+          message: 'La contraseña ingresada es incorrecta.',
+          attemptsRemaining: attempt.attemptsRemaining,
+          retryAfterSeconds: attempt.retryAfterSeconds,
+        });
+      }
+      await this.passwordAttempts.reset(id);
     }
 
+    // Cortar las sesiones ANTES de borrar: sin esto el alumno dado de baja seguiría renovando tokens
+    // hasta que venza su sesión (el refresh no consulta la base).
+    // LIMITACIÓN CONOCIDA: sus access tokens ya emitidos siguen siendo válidos hasta su vencimiento
+    // (JWT_ACCESS_EXPIRES_IN, por defecto 15 minutos).
+    await this.refreshTokenService.revokeAllForSub(id);
     await this.repo.remove(entity);
+  }
+
+  async getPasswordLockStatus(id: string): Promise<PasswordLockStatusDto> {
+    const entity = await this.repo.findOne({ where: { id } });
+    if (!entity) throw new NotFoundException(`Alumno con id ${id} no encontrado.`);
+    // Sin contraseña no hay nada que adivinar: la baja no pide contraseña.
+    if (entity.password === null) return { locked: false, retryAfterSeconds: 0 };
+    return this.passwordAttempts.getLockStatus(id);
   }
 
   async suspend(id: string): Promise<StudentResponseDto> {
@@ -285,8 +334,15 @@ export class StudentService implements IStudentService {
     if (entity.account_status === AccountStatus.Suspended) {
       throw new BadRequestException('El alumno ya está suspendido.');
     }
+
     entity.account_status = AccountStatus.Suspended;
     const saved = await this.repo.save(entity);
+
+    // Cerrar las sesiones del propio alumno: la suspensión solo impide loguearse de nuevo, pero un
+    // refresh token vigente seguiría renovando tokens hasta 3 días.
+    // LIMITACIÓN CONOCIDA: sus access tokens ya emitidos siguen siendo válidos hasta su vencimiento
+    // (JWT_ACCESS_EXPIRES_IN, por defecto 15 minutos).
+    await this.refreshTokenService.revokeAllForSub(id);
 
     // Cascade: suspender apps y revocar sesiones activas
     const apps = await this.oauthClientRepo.find({ where: { responsibleUserId: id } });

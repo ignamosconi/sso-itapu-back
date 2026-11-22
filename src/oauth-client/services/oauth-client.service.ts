@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module.js';
-import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StudentEntity } from '../../student/entities/student.entity.js';
@@ -23,6 +23,9 @@ import { ChangeResponsibleUserDto } from '../dtos/change-responsible-user.dto.js
 import { ResponsibleUserResponseDto } from '../dtos/responsible-user-response.dto.js';
 
 const BCRYPT_ROUNDS = 10;
+
+const CLIENT_NAME_UNIQUE_INDEX = 'UQ_oauth_clients_client_name_normalized';
+const CLIENT_NAME_TAKEN_MESSAGE = 'Ya existe una aplicación con ese nombre.';
 
 @Injectable()
 export class OAuthClientService implements IOAuthClientService {
@@ -107,6 +110,24 @@ export class OAuthClientService implements IOAuthClientService {
     };
   }
 
+  // Ignora mayúsculas, tildes y espacios en los extremos. Esta expresión debe coincidir con la
+  // del índice único (migración OAuthClientNameUnique) para que Postgres lo use.
+  private async assertClientNameAvailable(name: string, excludeId?: number): Promise<void> {
+    const qb = this.clientRepository
+      .createQueryBuilder('c')
+      .where('lower(immutable_unaccent(btrim(c.clientName))) = lower(immutable_unaccent(btrim(:name)))', { name });
+    if (excludeId !== undefined) qb.andWhere('c.id != :excludeId', { excludeId });
+    if ((await qb.getCount()) > 0) throw new ConflictException(CLIENT_NAME_TAKEN_MESSAGE);
+  }
+
+  // Dos pedidos simultáneos pueden pasar el chequeo anterior; el índice único es la red de seguridad.
+  private isClientNameConflict(err: unknown): boolean {
+    const e = err as { code?: string; constraint?: string; driverError?: { code?: string; constraint?: string } };
+    const code = e?.driverError?.code ?? e?.code;
+    const constraint = e?.driverError?.constraint ?? e?.constraint;
+    return code === '23505' && constraint === CLIENT_NAME_UNIQUE_INDEX;
+  }
+
   async findAll(): Promise<OAuthClientResponseDto[]> {
     const entities = await this.clientRepository.find();
     return entities.map(e => this.toResponseDto(e));
@@ -140,6 +161,7 @@ export class OAuthClientService implements IOAuthClientService {
   }
 
   async create(dto: CreateOAuthClientDto, adminId: string): Promise<OAuthClientCreatedResponseDto> {
+    await this.assertClientNameAvailable(dto.clientName);
     // findOne lanza NotFoundException si no existe — se propaga como 404.
     const student = await this.studentService.findOne(dto.responsibleUserId);
     if (student.account_status !== 'active') {
@@ -151,7 +173,13 @@ export class OAuthClientService implements IOAuthClientService {
     const clientSecret = await bcrypt.hash(plainSecret, BCRYPT_ROUNDS);
     // responsibleUserId viene del dto (spread), la FK se persiste sola.
     const entity = this.clientRepository.create({ ...dto, clientSecret });
-    const saved = await this.clientRepository.save(entity);
+    let saved: OAuthClientEntity;
+    try {
+      saved = await this.clientRepository.save(entity);
+    } catch (err) {
+      if (this.isClientNameConflict(err)) throw new ConflictException(CLIENT_NAME_TAKEN_MESSAGE);
+      throw err;
+    }
     // Recargar para obtener la relación eager (responsibleUser).
     const withRelations = await this.clientRepository.findOneOrFail({ where: { id: saved.id } });
     await this.storePendingSecret(saved.id, plainSecret, adminId);
@@ -161,6 +189,8 @@ export class OAuthClientService implements IOAuthClientService {
   async update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto> {
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) throw new NotFoundException(`Cliente OAuth con id ${id} no encontrado.`);
+
+    if (dto.clientName !== undefined) await this.assertClientNameAvailable(dto.clientName, id);
 
     const changes: Partial<Pick<OAuthClientEntity, 'clientName' | 'redirectUris' | 'responsibleUserId'>> = {};
 
@@ -181,7 +211,12 @@ export class OAuthClientService implements IOAuthClientService {
     // update() solo escribe las columnas indicadas. No usamos save() porque la relación
     // eager `responsibleUser` ya cargada (la vieja) pisaría el nuevo responsibleUserId.
     if (Object.keys(changes).length > 0) {
-      await this.clientRepository.update({ id }, changes);
+      try {
+        await this.clientRepository.update({ id }, changes);
+      } catch (err) {
+        if (this.isClientNameConflict(err)) throw new ConflictException(CLIENT_NAME_TAKEN_MESSAGE);
+        throw err;
+      }
     }
 
     const reloaded = await this.clientRepository.findOneOrFail({ where: { id } });

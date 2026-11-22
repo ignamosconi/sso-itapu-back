@@ -5,7 +5,7 @@ jest.mock('bcrypt', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';;
 import { ConfigService } from '@nestjs/config';
 import { OAuthClientService } from './oauth-client.service.js';
 import { OAuthClientEntity } from '../entities/oauth-client.entity.js';
@@ -30,6 +30,7 @@ function makeClient(overrides: Partial<OAuthClientEntity> = {}): OAuthClientEnti
 describe('OAuthClientService', () => {
   let service: OAuthClientService;
   let mockRepo: jest.Mocked<Record<string, jest.Mock>>;
+  let mockQueryBuilder: jest.Mocked<Record<string, jest.Mock>>;
   let mockCredentialTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRedis: jest.Mocked<Record<string, jest.Mock>>;
@@ -45,7 +46,15 @@ describe('OAuthClientService', () => {
       remove: jest.fn(),
       update: jest.fn().mockResolvedValue(undefined),
       findOneOrFail: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
+
+    mockQueryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(0),
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder);
 
     mockCredentialTokenService = {
       generate: jest.fn().mockResolvedValue('one-time-token'),
@@ -255,6 +264,43 @@ describe('OAuthClientService', () => {
   });
 
   describe('create', () => {
+    it('debería lanzar ConflictException si ya existe una app con ese nombre', async () => {
+      mockQueryBuilder.getCount.mockResolvedValue(1);
+
+      await expect(service.create(
+        { clientName: 'Torneito', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      )).rejects.toThrow(ConflictException);
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'lower(immutable_unaccent(btrim(c.clientName))) = lower(immutable_unaccent(btrim(:name)))',
+        { name: 'Torneito' },
+      );
+      expect(mockRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('debería convertir la violación del índice único de nombres en ConflictException', async () => {
+      mockRepo.create.mockReturnValue(makeClient());
+      mockRepo.save.mockRejectedValue({
+        driverError: { code: '23505', constraint: 'UQ_oauth_clients_client_name_normalized' },
+      });
+
+      await expect(service.create(
+        { clientName: 'Torneito', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      )).rejects.toThrow(ConflictException);
+    });
+
+    it('no debería ocultar otros errores al guardar', async () => {
+      mockRepo.create.mockReturnValue(makeClient());
+      mockRepo.save.mockRejectedValue(new Error('boom'));
+
+      await expect(service.create(
+        { clientName: 'Torneito', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      )).rejects.toThrow('boom');
+    });
+
     it('debería crear un cliente y guardar el pending secret en Redis vinculado al admin', async () => {
       const client = makeClient();
       mockRepo.create.mockReturnValue(client);
@@ -291,6 +337,33 @@ describe('OAuthClientService', () => {
   });
 
   describe('update', () => {
+    it('debería lanzar ConflictException si el nuevo nombre ya lo usa otra app', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockQueryBuilder.getCount.mockResolvedValue(1);
+
+      await expect(service.update(1, { clientName: 'Torneito' })).rejects.toThrow(ConflictException);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('c.id != :excludeId', { excludeId: 1 });
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('no debería chequear el nombre si no se modifica clientName', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockRepo.findOneOrFail.mockResolvedValue(makeClient());
+
+      await service.update(1, { redirectUris: ['https://new.com/cb'] });
+
+      expect(mockRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('debería convertir la violación del índice único de nombres en ConflictException al actualizar', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockRepo.update.mockRejectedValue({
+        driverError: { code: '23505', constraint: 'UQ_oauth_clients_client_name_normalized' },
+      });
+
+      await expect(service.update(1, { clientName: 'Otro' })).rejects.toThrow(ConflictException);
+    });
     it('debería actualizar clientName y redirectUris sin cambiar responsable', async () => {
       const client = makeClient();
       mockRepo.findOne.mockResolvedValue(client);

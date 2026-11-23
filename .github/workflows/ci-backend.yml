@@ -45,7 +45,7 @@ jobs:
           ADMIN_PANEL_URL: 'http://localhost:5173'
           SSO_BASE_URL: 'http://localhost:3000'
           DB_HOST: localhost
-          DB_PORT: '5432'
+          DB_PORT: '5433'
           DB_USERNAME: postgres
           DB_PASSWORD: postgres
           DB_NAME: sso_itapu

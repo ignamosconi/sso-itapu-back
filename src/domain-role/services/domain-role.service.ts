@@ -23,26 +23,26 @@ export class DomainRoleService implements IDomainRoleService {
 
   async findOne(id: number): Promise<DomainRoleResponseDto> {
     const entity = await this.repo.findOne({ where: { id } });
-    if (!entity) throw new NotFoundException(`Rol con id ${id} no encontrado.`);
+    if (!entity) throw new NotFoundException(`Cargo con id ${id} no encontrado.`);
     return this.toDto(entity);
   }
 
   async create(dto: CreateDomainRoleDto): Promise<DomainRoleResponseDto> {
     const exists = await this.repo.findOne({ where: { name: dto.name } });
-    if (exists) throw new ConflictException(`El rol "${dto.name}" ya existe.`);
+    if (exists) throw new ConflictException(`El cargo "${dto.name}" ya existe.`);
     return this.toDto(await this.repo.save(this.repo.create({ name: dto.name })));
   }
 
   async remove(id: number): Promise<void> {
     const entity = await this.repo.findOne({ where: { id } });
-    if (!entity) throw new NotFoundException(`Rol con id ${id} no encontrado.`);
+    if (!entity) throw new NotFoundException(`Cargo con id ${id} no encontrado.`);
     const [result] = await this.repo.manager.query<[{ count: string }]>(
       `SELECT COUNT(*) FROM students WHERE domain_role_id = $1`,
       [id],
     );
     if (parseInt(result.count, 10) > 0) {
       throw new BadRequestException(
-        `No se puede eliminar el rol "${entity.name}" porque hay ${result.count} usuario(s) asignado(s) a él.`,
+        `No se puede eliminar el cargo "${entity.name}" porque hay ${result.count} usuario(s) asignado(s) a él.`,
       );
     }
     await this.repo.remove(entity);

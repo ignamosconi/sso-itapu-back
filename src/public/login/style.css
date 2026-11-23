@@ -1,7 +1,16 @@
 :root {
-  --utn-yellow: #f5a705;
-  --utn-yellow-dark: #ff9f00;
-  --utn-dark: #1a1a2e;
+  /* Paleta institucional ITAPU (la misma que usan los mails) */
+  --red:        #E5322D;
+  --red-pastel: #F4A09A;
+  --red-mid:    #EC6963; /* intermedio entre red-pastel y red, para hover */
+  --ink:        #171516;
+
+  /* Acento (botones, foco, links) */
+  --accent:        var(--red-pastel);
+  --accent-hover:  var(--red-mid);
+  --accent-active: var(--red);
+  --accent-text:   var(--red-pastel); /* acento usado como color de texto/borde */
+  --on-accent:     var(--ink);        /* texto sobre botones/badges de acento */
 
   /* Modo oscuro (por defecto) */
   --bg-overlay-start: rgba(10, 10, 30, 0.88);
@@ -23,11 +32,21 @@
   --link-btn-bg:      rgba(255, 255, 255, 0.05);
   --link-btn-border:  rgba(255, 255, 255, 0.12);
   --link-btn-color:   rgba(255, 255, 255, 0.65);
+
+  /* Escena de login exitoso */
+  --success-bg:          #0f0f1a;
+  --success-card-bg:     rgba(255, 255, 255, 0.06);
+  --success-card-border: rgba(255, 255, 255, 0.12);
+  --success-title:       #ffffff;
+  --success-sub:         rgba(255, 255, 255, 0.5);
 }
 
 /* Modo claro */
 body.theme-light {
-  --bg-overlay-start: rgba(245, 167, 5, 0.18);
+  /* El rojo pastel sobre blanco no alcanza contraste como texto: en light el acento de texto pasa al rojo institucional */
+  --accent-text:      var(--red);
+
+  --bg-overlay-start: rgba(244, 160, 154, 0.18);
   --bg-overlay-end:   rgba(255, 255, 255, 0.82);
   --card-bg:          rgba(255, 255, 255, 0.75);
   --card-border:      rgba(200, 200, 200, 0.6);
@@ -45,8 +64,15 @@ body.theme-light {
   --footer-color:     #999999;
   --link-btn-bg:      rgba(0, 0, 0, 0.04);
   --link-btn-border:  rgba(0, 0, 0, 0.1);
-  --link-btn-color:   #00000;
+  --link-btn-color:   #000000;
   --error-color: #991b1b;
+
+  /* Escena de login exitoso */
+  --success-bg:          #f5f5f5;
+  --success-card-bg:     #ffffff;
+  --success-card-border: #e0e0e0;
+  --success-title:       #1a1a1a;
+  --success-sub:         #666666;
 }
 
 body {
@@ -55,7 +81,7 @@ body {
   font-family: 'Inter', sans-serif;
 
   background: linear-gradient(var(--bg-overlay-start), var(--bg-overlay-end)),
-              url('/app/assets/fondo-utn.jpg');
+              url('/app/assets/fondo-itapu.png');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
@@ -83,7 +109,7 @@ body {
   max-width: 340px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  
+
 
   /* Ocultamos la tarjeta al inicio y preparamos su transición */
   opacity: 0;
@@ -104,10 +130,11 @@ body {
 
 .logo-circle {
   width: 42px; height: 42px;
-  background: var(--utn-yellow);
+  /* Sin fondo: antes era amarillo y se veía como contorno alrededor del logo */
+  background: transparent;
   border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 12px; color: #1a1200;
+  font-weight: 800; font-size: 12px; color: var(--on-accent);
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -118,18 +145,18 @@ body {
   object-fit: contain;
 }
 
-.logo-text { 
+.logo-text {
   color: var(--logo-text-color);
 }
 
-.logo-text strong { 
+.logo-text strong {
   color: var(--logo-text-strong)
 }
 
 .badge {
   display: inline-block;
-  background: var(--utn-yellow);
-  color: #1a1200;
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -177,18 +204,18 @@ body {
   transition: border-color 0.2s;
 }
 
-.field-input:focus { 
-  border-color: var(--utn-yellow); 
+.field-input:focus {
+  border-color: var(--accent-text);
 }
 
-.field-input::placeholder { 
+.field-input::placeholder {
   color: var(--input-placeholder);
 }
 
 .btn-login {
   width: 100%;
-  background: var(--utn-yellow);
-  color: #1a1200;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   border-radius: 8px;
   padding: 11px;
@@ -199,8 +226,12 @@ body {
   transition: background 0.15s;
 }
 
-.btn-login:hover:not(:disabled) { 
-  background: #e0b000; 
+.btn-login:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-login:active:not(:disabled) {
+  background: var(--accent-active);
 }
 
 .btn-login:disabled {
@@ -279,12 +310,12 @@ body {
 
 .link-btn:hover {
   background: rgba(255, 255, 255, 0.09);
-  border-color: var(--utn-yellow);
-  color: var(--utn-yellow);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
 }
 
 .link-btn:hover img {
-  filter: opacity(1) drop-shadow(0px 0px 1px var(--utn-yellow));
+  filter: opacity(1) drop-shadow(0px 0px 1px var(--accent-text));
 }
 
 .btn-back {
@@ -297,7 +328,7 @@ body {
   margin-bottom: 1rem;
   display: block;
 }
-.btn-back:hover { color: var(--utn-yellow); }
+.btn-back:hover { color: var(--accent-text); }
 
 .btn-link {
   background: none;
@@ -311,7 +342,7 @@ body {
   width: 100%;
   text-align: center;
 }
-.btn-link:hover { color: var(--utn-yellow); }
+.btn-link:hover { color: var(--accent-text); }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
@@ -323,5 +354,48 @@ body.theme-light .link-btn img {
   filter: opacity(0.5) brightness(0);
 }
 body.theme-light .link-btn:hover img {
-  filter: opacity(1) drop-shadow(0px 0px 1px var(--utn-yellow));
+  filter: opacity(1) drop-shadow(0px 0px 1px var(--accent-text));
+}
+
+/* ── Escena: login exitoso ──────────────────────────────────────────────
+   login.js agrega la clase .is-success al body y reemplaza su contenido.
+   Los colores salen de las variables --success-* según el tema. */
+body.is-success {
+  background: var(--success-bg); /* pisa el fondo con imagen del login */
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.success-wrap {
+  text-align: center;
+  padding: 2rem;
+}
+
+.success-card {
+  display: inline-block;
+  background: var(--success-card-bg);
+  border: 1px solid var(--success-card-border);
+  border-radius: 12px;
+  padding: 1.5rem 2.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  margin-bottom: 1.5rem;
+}
+
+.success-title {
+  color: var(--success-title);
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.success-card .badge {
+  margin-bottom: 0;
+}
+
+.success-sub {
+  color: var(--success-sub);
+  font-size: 13px;
+  margin: 0 0 2rem 0;
 }

@@ -320,7 +320,7 @@ describe('StudentService', () => {
       await expect(service.create(createDto as never)).rejects.toThrow(ConflictException);
     });
 
-    it('debería lanzar NotFoundException si el rol no existe', async () => {
+    it('debería lanzar NotFoundException si el cargo no existe', async () => {
       mockRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
       mockDomainRoleRepo.findOne.mockResolvedValue(null);
 
@@ -378,7 +378,7 @@ describe('StudentService', () => {
         .rejects.toThrow(ConflictException);
     });
 
-    it('debería lanzar NotFoundException si el nuevo rol no existe', async () => {
+    it('debería lanzar NotFoundException si el nuevo cargo no existe', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent());
       mockDomainRoleRepo.findOne.mockResolvedValue(null);
 

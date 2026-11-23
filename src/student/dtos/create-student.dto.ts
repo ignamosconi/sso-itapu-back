@@ -35,7 +35,7 @@ export class CreateStudentDto {
   @IsDateString()
   birth_date!: string;
 
-  @ApiProperty({ example: 1, description: 'ID del rol institucional.' })
+  @ApiProperty({ example: 1, description: 'ID del cargo institucional.' })
   @Type(() => Number)
   @IsInt()
   domain_role_id!: number;

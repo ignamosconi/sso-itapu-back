@@ -281,7 +281,7 @@ export class OAuthClientService implements IOAuthClientService {
     // Como mucho un cliente tendría que pedir regenerar el secret, asique no hay impacto
     // de seguridad (no se expone información sensible ni se otorga acceso indebido).
     // Se asume este riesgo porque los administradores del sistema son personal de confianza
-    // de UTN FRVM, y el sistema es de uso interno.
+    // de ITAPU, y el sistema es de uso interno.
     const generateDto = new GenerateCredentialTokenDto();
     Object.assign(generateDto, {
       oauthClientId: client.id,
@@ -318,7 +318,7 @@ export class OAuthClientService implements IOAuthClientService {
               ['Redirect URIs', client.redirectUris.map((u) => html`<span style="display:block">${u}</span>`).join('')],
             ])}
             ${callout(
-              html`${label('Endpoints de referencia (públicos)')}Usá estos endpoints para obtener los valores válidos de ${code('grupo')} y ${code('carrera')} que devuelve ${code('/sso/me')}. No hardcodees estos valores en tu app: consultá la API para que tu integración se adapte automáticamente si el administrador agrega o renombra cargos o especialidades.<div style="margin-top:10px">${code(`GET ${ssoUrl}/sso/info/domain-roles`)}<br><span style="font-size:12px;color:#5B5658">valores posibles de grupo</span></div><div style="margin-top:10px">${code(`GET ${ssoUrl}/sso/info/specialties`)}<br><span style="font-size:12px;color:#5B5658">valores posibles de carrera</span></div>`,
+              html`${label('Endpoints de referencia (públicos)')}Usá estos endpoints para obtener los valores válidos de ${code('cargo')} y ${code('especialidad')} que devuelve ${code('/sso/me')}. No hardcodees estos valores en tu app: consultá la API para que tu integración se adapte automáticamente si el administrador agrega o renombra cargos o especialidades.<div style="margin-top:10px">${code(`GET ${ssoUrl}/sso/info/domain-roles`)}<br><span style="font-size:12px;color:#5B5658">valores posibles de cargo</span></div><div style="margin-top:10px">${code(`GET ${ssoUrl}/sso/info/specialties`)}<br><span style="font-size:12px;color:#5B5658">valores posibles de especialidad</span></div>`,
             )}
             ${sectionTitle('Integración paso a paso')}
             ${trusted(steps.map(([title, inner]) => stepCard(title, inner).value).join(''))}

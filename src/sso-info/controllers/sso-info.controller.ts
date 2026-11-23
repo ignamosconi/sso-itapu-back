@@ -15,13 +15,13 @@ export class SsoInfoController implements ISsoInfoController {
   ) {}
 
   @ApiOperation({
-    summary: 'Listar roles institucionales disponibles',
+    summary: 'Listar cargos institucionales disponibles',
     description:
-      'Devuelve los valores posibles del campo `grupo` en la respuesta de `/sso/me`. ' +
+      'Devuelve los valores posibles del campo `cargo` en la respuesta de `/sso/me`. ' +
       'Endpoint público — no requiere autenticación. ' +
-      'Usalo para validar roles en tu app o para mostrarlos en una UI de selección.',
+      'Usalo para validar cargos en tu app o para mostrarlos en una UI de selección.',
   })
-  @ApiResponse({ status: 200, schema: { example: ['Alumno', 'Docente', 'Administrativo'] } })
+  @ApiResponse({ status: 200, schema: { example: ['Alumno', 'Profesor', 'Autoridad', 'No Docente'] } })
   @Get('domain-roles')
   async getDomainRoles(): Promise<string[]> {
     const roles = await this.domainRoleService.findAll();
@@ -31,7 +31,7 @@ export class SsoInfoController implements ISsoInfoController {
   @ApiOperation({
     summary: 'Listar especialidades disponibles',
     description:
-      'Devuelve los valores posibles del campo `carrera` en la respuesta de `/sso/me`. ' +
+      'Devuelve los valores posibles del campo `especialidad` en la respuesta de `/sso/me`. ' +
       'Endpoint público — no requiere autenticación.',
   })
   @ApiResponse({ status: 200, schema: { example: ['Programación', 'Mecánica', 'Química'] } })

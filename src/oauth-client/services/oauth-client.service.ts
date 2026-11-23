@@ -281,7 +281,7 @@ export class OAuthClientService implements IOAuthClientService {
     // Como mucho un cliente tendría que pedir regenerar el secret, asique no hay impacto
     // de seguridad (no se expone información sensible ni se otorga acceso indebido).
     // Se asume este riesgo porque los administradores del sistema son personal de confianza
-    // de UTN FRVM, y el sistema es de uso interno.
+    // de ITAPU, y el sistema es de uso interno.
     const generateDto = new GenerateCredentialTokenDto();
     Object.assign(generateDto, {
       oauthClientId: client.id,

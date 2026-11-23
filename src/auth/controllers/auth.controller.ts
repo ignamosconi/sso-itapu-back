@@ -38,7 +38,7 @@ export class AuthController implements IAuthController {
 
   @ApiOperation({
     summary: 'Login de alumno',
-    description: 'Valida las credenciales del alumno contra autogestión y emite un authorization code de un solo uso (TTL definido por CODE_TTL_MS). Este endpoint es llamado por el HTML del popup.',
+    description: 'Valida las credenciales del alumno contra la base de datos del SSO y emite un authorization code de un solo uso (TTL definido por CODE_TTL_MS). Este endpoint es llamado por el HTML del popup.',
   })
   @ApiResponse({ status: 201, type: CodeResponseDto })
   @ApiResponse({ status: 401, description: 'Credenciales inválidas o client_id/redirect_uri incorrectos' })

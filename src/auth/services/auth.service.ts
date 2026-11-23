@@ -30,6 +30,9 @@ import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
 import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
 import { html } from '../../mail/utils/email-html.js';
+import { button, callout, emailLayout, p } from '../../mail/utils/email-layout.js';
+
+const DEFAULT_RESET_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos
 
 @Injectable()
 export class AuthService implements IAuthService {
@@ -39,6 +42,7 @@ export class AuthService implements IAuthService {
   private readonly refreshExpiresIn: string;
   private readonly sessionMaxDurationMs: number;
   private readonly adminPanelUrl: string;
+  private readonly resetCooldownSeconds: number;
 
   constructor(
     private readonly configService: ConfigService,
@@ -65,6 +69,9 @@ export class AuthService implements IAuthService {
     this.sessionMaxDurationMs =
       this.parseExpiresIn(this.configService.getOrThrow<string>('JWT_REFRESH_SESSION_MAX_DURATION')) * 1000;
     this.adminPanelUrl = this.configService.getOrThrow<string>('ADMIN_PANEL_URL');
+    this.resetCooldownSeconds = Math.ceil(
+      this.readPositiveInt('PASSWORD_RESET_COOLDOWN_MS', DEFAULT_RESET_COOLDOWN_MS) / 1000,
+    );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -72,6 +79,18 @@ export class AuthService implements IAuthService {
   private maskEmail(email: string): string {
     const [local, domain] = email.split('@');
     return `${local.slice(0, 2)}${'*'.repeat(Math.max(1, local.length - 2))}@${domain}`;
+  }
+
+  // Si la variable no está definida se usa el valor por defecto; si está definida pero es
+  // inválida, el servidor NO arranca (igual que los demás límites de seguridad).
+  private readPositiveInt(name: string, fallback: number): number {
+    const raw = this.configService.get<string>(name);
+    if (raw === undefined || raw === '') return fallback;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`[Config] ${name} debe ser un entero positivo (valor recibido: "${raw}").`);
+    }
+    return value;
   }
 
   private parseExpiresIn(value: string): number {
@@ -139,7 +158,8 @@ export class AuthService implements IAuthService {
       };
     }
 
-    return { status: 'has_password' };
+    const resetTtl = await this.redis.ttl(`sso:reset-cooldown:${student.id}`);
+    return { status: 'has_password', resetCooldownSeconds: resetTtl > 0 ? resetTtl : 0 };
   }
 
   async resendSetupEmail(dto: ResendSetupEmailRequestDto): Promise<{ cooldownSeconds: number }> {
@@ -164,20 +184,23 @@ export class AuthService implements IAuthService {
       student.email,
       'Configurá tu contraseña — ITAPU',
       {
-        html: html`
-        <p>Hola <strong>${student.first_name}</strong>,</p>
-        <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
-        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-        <p>Hacé clic aquí (válido por 24 horas):</p>
-        <p><a href="${link}">${link}</a></p>
-        `,
+        html: emailLayout({
+          title: 'Configurá tu contraseña',
+          body: html`
+            ${p(html`Hola <strong>${student.first_name}</strong>,`)}
+            ${p('Para iniciar sesión necesitás configurar tu contraseña.')}
+            ${callout(html`Tu nombre de usuario es: <strong>${student.username}</strong>`)}
+            ${p('Hacé clic aquí (válido por 24 horas):')}
+            ${button('Configurar contraseña', link, 'center')}
+          `,
+        }),
       },
     );
-    await this.redis.set(cooldownKey, '1', 'EX', 300);
-    return { cooldownSeconds: 300 };
+    await this.redis.set(cooldownKey, '1', 'EX', this.resetCooldownSeconds);
+    return { cooldownSeconds: this.resetCooldownSeconds };
   }
 
-  async requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<void> {
+  async requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<{ cooldownSeconds: number }> {
     const student = await this.studentService.findForAuth(dto.username);
     if (!student) throw new NotFoundException('Usuario no encontrado.');
     if (student.account_status === 'suspended') {
@@ -188,7 +211,26 @@ export class AuthService implements IAuthService {
         'Esta cuenta no tiene contraseña configurada. Revisá tu correo de bienvenida.',
       );
     }
-    await this.studentService.sendPasswordResetEmail(student);
+
+    // SET NX es atómico: si dos pedidos llegan a la vez, solo uno toma el cooldown y envía el mail.
+    const cooldownKey = `sso:reset-cooldown:${student.id}`;
+    const acquired = await this.redis.set(cooldownKey, '1', 'EX', this.resetCooldownSeconds, 'NX');
+    if (acquired === null) {
+      const ttl = await this.redis.ttl(cooldownKey);
+      throw new HttpException(
+        { message: 'Esperá antes de reenviar el correo.', retryAfter: ttl > 0 ? ttl : this.resetCooldownSeconds },
+        429,
+      );
+    }
+
+    try {
+      await this.studentService.sendPasswordResetEmail(student);
+    } catch (err) {
+      // Si el envío falló no penalizamos al alumno: liberamos el cooldown.
+      await this.redis.del(cooldownKey);
+      throw err;
+    }
+    return { cooldownSeconds: this.resetCooldownSeconds };
   }
 
   async validatePasswordResetToken(dto: ValidateResetTokenRequestDto): Promise<void> {

@@ -9,4 +9,7 @@ export class CheckUsernameResponseDto {
 
   @ApiProperty({ required: false, example: 300 })
   cooldownSeconds?: number;
+
+  @ApiProperty({ required: false, example: 300, description: 'Solo para cuentas con contraseña: segundos que faltan para poder pedir otro correo de recuperación.' })
+  resetCooldownSeconds?: number;
 }

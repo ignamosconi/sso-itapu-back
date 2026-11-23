@@ -5,6 +5,8 @@
   const state = params.get('state') || '';
   let currentUsername = '';
   let resendInterval = null;
+  let emailMode = 'setup';        // 'setup' (cuenta sin contraseña) | 'reset' (olvidé mi contraseña)
+  let resetCooldownEndsAt = 0;    // timestamp (ms) en el que termina el cooldown de reset de currentUsername
 
   // ── Helpers de UI ────────────────────────────────────────────────────────
 
@@ -22,7 +24,7 @@
   }
 
   function showScreen(id) {
-    ['screen-username', 'screen-password', 'screen-check-email', 'screen-reset-sent'].forEach(s => {
+    ['screen-username', 'screen-password', 'screen-check-email', ].forEach(s => {
       document.getElementById(s).style.display = s === id ? '' : 'none';
     });
     hideError();
@@ -114,15 +116,13 @@
       currentUsername = username;
 
       if (data.status === 'has_password') {
+        resetCooldownEndsAt = Date.now() + (data.resetCooldownSeconds ?? 0) * 1000;
         document.getElementById('passwordInput').value = '';
         showScreen('screen-password');
         document.getElementById('passwordInput').focus();
       } else {
         document.getElementById('maskedEmail').textContent = data.maskedEmail;
-        if (data.cooldownSeconds > 0) {
-          startResendCooldown(data.cooldownSeconds);
-        }
-        showScreen('screen-check-email');
+        openEmailScreen('setup', data.cooldownSeconds ?? 0);
       }
     } catch {
       showError('Error de red. Intentá de nuevo.');
@@ -167,6 +167,36 @@
     if (e.key === 'Enter') document.getElementById('btnLogin').click();
   });
 
+  // ── Pantalla de envío de correo (setup y olvidé mi contraseña) ───────────
+  // Deja la pantalla en estado limpio (evita arrastrar el countdown de otro usuario)
+  // y, si hay un cooldown activo, la muestra con el botón deshabilitado.
+  function openEmailScreen(mode, cooldownSeconds) {
+    emailMode = mode;
+    clearInterval(resendInterval);
+    resendInterval = null;
+
+    const btn = document.getElementById('btnResend');
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.textContent = 'Enviar correo';
+    document.getElementById('resendCountdown').style.display = 'none';
+    document.getElementById('emailTextSetup').style.display = mode === 'setup' ? '' : 'none';
+    document.getElementById('emailTextReset').style.display = mode === 'reset' ? '' : 'none';
+
+    showScreen('screen-check-email');
+    if (cooldownSeconds > 0) {
+      btn.textContent = 'Reenviar correo';
+      startResendCooldown(cooldownSeconds);
+    }
+  }
+
+  // Si el cooldown del reset cambia (envío o 429), lo recordamos para cuando el usuario
+  // vuelva a entrar a "Olvidé mi contraseña" sin volver a consultar al servidor.
+  function applyCooldown(seconds) {
+    if (emailMode === 'reset') resetCooldownEndsAt = Date.now() + seconds * 1000;
+    startResendCooldown(seconds);
+  }
+
   // ── Reenviar correo de setup ──────────────────────────────────────────────
   function startResendCooldown(seconds) {
     const btn = document.getElementById('btnResend');
@@ -201,7 +231,8 @@
     hideError();
     setLoading(btn, true);
     try {
-      const route = window.location.pathname.replace('/login', '/resend-setup-email');
+      const endpoint = emailMode === 'reset' ? '/request-password-reset' : '/resend-setup-email';
+      const route = window.location.pathname.replace('/login', endpoint);
       const res = await fetch(route, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -210,7 +241,7 @@
       const data = await res.json();
 
       if (res.status === 429) {
-        startResendCooldown(data.retryAfter ?? 300);
+        applyCooldown(data.retryAfter ?? 300);
         return;
       }
       if (!res.ok) {
@@ -218,7 +249,7 @@
         return;
       }
       btn.textContent = 'Reenviar correo';
-      startResendCooldown(data.cooldownSeconds ?? 300);
+      applyCooldown(data.cooldownSeconds ?? 300);
     } catch {
       showError('Error de red. Intentá de nuevo.');
     } finally {
@@ -232,28 +263,10 @@
 
   // ── Olvidé mi contraseña ──────────────────────────────────────────────────
 
-  document.getElementById('btnForgot').addEventListener('click', async () => {
-    const btn = document.getElementById('btnForgot');
+  document.getElementById('btnForgot').addEventListener('click', () => {
     hideError();
-    setLoading(btn, true);
-    try {
-      const route = window.location.pathname.replace('/login', '/request-password-reset');
-      const res = await fetch(route, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: currentUsername }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        showError(data.message || 'Error al solicitar la recuperación.');
-        return;
-      }
-      showScreen('screen-reset-sent');
-    } catch {
-      showError('Error de red. Intentá de nuevo.');
-    } finally {
-      setLoading(btn, false);
-    }
+    const remaining = Math.max(0, Math.ceil((resetCooldownEndsAt - Date.now()) / 1000));
+    openEmailScreen('reset', remaining);
   });
 
   // ── Volver ────────────────────────────────────────────────────────────────
@@ -263,13 +276,7 @@
   });
 
   document.getElementById('btnBackFromEmail').addEventListener('click', () => {
-    showScreen('screen-username');
-  });
-
-  document.getElementById('btnBackFromReset').addEventListener('click', () => {
-    currentUsername = '';
-    document.getElementById('usernameInput').value = '';
-    showScreen('screen-username');
+    showScreen(emailMode === 'reset' ? 'screen-password' : 'screen-username');
   });
 
   // ── Success ───────────────────────────────────────────────────────────────

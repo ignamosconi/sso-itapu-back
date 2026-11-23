@@ -21,7 +21,7 @@ export interface IAuthService {
   logout(dto: LogoutRequestDto): Promise<void>;
   getCleanUserInfo(payload: JwtPayloadDto): UserInfoOauthDto;
   checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto>;
-  requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<void>;
+  requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<{ cooldownSeconds: number }>;
   validatePasswordResetToken(dto: ValidateResetTokenRequestDto): Promise<void>;
   setPassword(dto: SetPasswordRequestDto): Promise<void>;
   resendSetupEmail(dto: ResendSetupEmailRequestDto): Promise<{ cooldownSeconds: number }>;

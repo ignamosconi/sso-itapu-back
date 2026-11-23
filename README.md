@@ -235,6 +235,7 @@ cp .env.example .env
 | `REDIS_PASSWORD` | Password de Redis. | — |
 | `PENDING_2FA_TTL_MS` | TTL del challenge 2FA pendiente en ms. | `180000` |
 | `PENDING_2FA_MAX_ATTEMPTS` | Intentos fallidos de TOTP antes de invalidar el challenge. | `5` |
+| `PASSWORD_RESET_COOLDOWN_MS` | Cuántos ms (5 min por defecto) el usuario debe esperar para reenviar el correo de "olvidé mi contraseña". | `5` |
 | `STUDENT_PASSWORD_MAX_ATTEMPTS` | Intentos de contraseña por alumno antes de bloquear la baja. | `5` |
 | `STUDENT_PASSWORD_LOCK_TTL_MS` | Duración de la ventana de conteo y del bloqueo, en ms. | `900000` |
 | `STUDENT_DELETE_THROTTLE_LIMIT` | Máximo de requests de baja de alumnos por IP en la ventana. | `10` |

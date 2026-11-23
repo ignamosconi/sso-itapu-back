@@ -55,7 +55,7 @@ body {
   font-family: 'Inter', sans-serif;
 
   background: linear-gradient(var(--bg-overlay-start), var(--bg-overlay-end)),
-              url('/app/assets/fondo-utn.jpg');
+              url('/app/assets/fondo-itapu.png');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;

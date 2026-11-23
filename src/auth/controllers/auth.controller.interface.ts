@@ -22,7 +22,7 @@ export interface IAuthController {
   logout(dto: LogoutRequestDto): Promise<void>;
   me(user: JwtPayloadDto): UserInfoOauthDto;
   checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto>;
-  requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<void>;
+  requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<{ cooldownSeconds: number }>;
   validateResetToken(dto: ValidateResetTokenRequestDto): Promise<void>;
   setPassword(dto: SetPasswordRequestDto): Promise<void>;
   resendSetupEmail(dto: ResendSetupEmailRequestDto): Promise<{ cooldownSeconds: number }>;

@@ -129,14 +129,15 @@ export class AuthController implements IAuthController {
 
   @ApiOperation({
     summary: 'Solicitar email de recuperación de contraseña',
-    description: 'Envía un link de un solo uso (24hs) al email registrado del usuario.',
+    description: 'Envía un link de un solo uso (24hs) al email registrado del usuario. Tiene un cooldown por cuenta (PASSWORD_RESET_COOLDOWN_MS).',
   })
-  @ApiResponse({ status: 204, description: 'Email enviado' })
+  @ApiResponse({ status: 200, description: 'Email enviado. Devuelve cooldownSeconds.' })
   @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 429, description: 'Cooldown activo, incluye retryAfter en segundos' })
   @Throttle({ default: { ttl: 900000, limit: 3 } })
-  @HttpCode(204)
+  @HttpCode(200)
   @Post('request-password-reset')
-  async requestPasswordReset(@Body() dto: RequestPasswordResetRequestDto): Promise<void> {
+  async requestPasswordReset(@Body() dto: RequestPasswordResetRequestDto): Promise<{ cooldownSeconds: number }> {
     return this.authService.requestPasswordReset(dto);
   }
 

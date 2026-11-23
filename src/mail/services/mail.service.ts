@@ -26,6 +26,7 @@ export class MailService implements IMailService {
       from: this.from,
       to,
       subject,
+      headers: { 'Content-Language': 'es' },
       ...(content.html ? { html: content.html } : {}),
       ...(content.text ? { text: content.text } : {}),
     });

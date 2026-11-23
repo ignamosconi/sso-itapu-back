@@ -50,6 +50,24 @@ const loginDto = {
   state: 'random-state',
 };
 
+function makeConfigService(env: Record<string, string> = {}) {
+  const required: Record<string, string> = {
+    JWT_ACCESS_SECRET: 'access-secret',
+    JWT_REFRESH_SECRET: 'refresh-secret',
+    JWT_ACCESS_EXPIRES_IN: '15m',
+    JWT_REFRESH_EXPIRES_IN: '8h',
+    JWT_REFRESH_SESSION_MAX_DURATION: '3d',
+    ADMIN_PANEL_URL: 'http://localhost:5173',
+  };
+  return {
+    getOrThrow: (key: string) => {
+      if (key in required) return required[key];
+      throw new Error(`Config key not found: ${key}`);
+    },
+    get: (key: string) => env[key],
+  };
+}
+
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 describe('AuthService', () => {
@@ -102,6 +120,7 @@ describe('AuthService', () => {
     mockRedis = {
       ttl: jest.fn().mockResolvedValue(-2), // -2 = clave inexistente → sin cooldown activo
       set: jest.fn().mockResolvedValue('OK'),
+      del: jest.fn().mockResolvedValue(1),
     };
 
     mockJwtService = {
@@ -120,23 +139,7 @@ describe('AuthService', () => {
         { provide: 'IPasswordResetTokenService', useValue: mockPasswordResetTokenService },
         { provide: 'IMailService', useValue: mockMailService },
         { provide: 'REDIS_CLIENT', useValue: mockRedis },
-        {
-          provide: ConfigService,
-          useValue: {
-            getOrThrow: (key: string) => {
-              const map: Record<string, string> = {
-                JWT_ACCESS_SECRET: 'access-secret',
-                JWT_REFRESH_SECRET: 'refresh-secret',
-                JWT_ACCESS_EXPIRES_IN: '15m',
-                JWT_REFRESH_EXPIRES_IN: '8h',
-                JWT_REFRESH_SESSION_MAX_DURATION: '3d',
-                ADMIN_PANEL_URL: 'http://localhost:5173',
-              };
-              if (key in map) return map[key];
-              throw new Error(`Config key not found: ${key}`);
-            },
-          },
-        },
+        { provide: ConfigService, useValue: makeConfigService() },
       ],
     }).compile();
 
@@ -200,6 +203,22 @@ describe('AuthService', () => {
       expect(result.maskedEmail).toBeUndefined();
     });
 
+    it('has_password: debería retornar resetCooldownSeconds: 0 si no hay cooldown de reset activo', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
+      mockRedis.ttl.mockResolvedValue(-2);
+      const result = await service.checkUsername({ username: 'immosconi136' });
+      expect(result.status).toBe('has_password');
+      expect(result.resetCooldownSeconds).toBe(0);
+      expect(mockRedis.ttl).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid');
+    });
+
+    it('has_password: debería retornar el tiempo restante del cooldown de reset si está activo', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
+      mockRedis.ttl.mockResolvedValue(120);
+      const result = await service.checkUsername({ username: 'immosconi136' });
+      expect(result.resetCooldownSeconds).toBe(120);
+    });
+
     it('debería retornar no_password con cooldownSeconds: 0 si no hay cooldown activo', async () => {
       mockStudentService.findForAuth.mockResolvedValue(
         makeStudent({ password: null, account_status: 'pending_registration' }),
@@ -244,6 +263,75 @@ describe('AuthService', () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
       await service.requestPasswordReset({ username: 'immosconi136' });
       expect(mockStudentService.sendPasswordResetEmail).toHaveBeenCalled();
+    });
+
+    it('debería tomar el cooldown (SET NX), enviar el mail y retornar cooldownSeconds: 300 por defecto', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
+      mockRedis.set.mockResolvedValue('OK');
+
+      const result = await service.requestPasswordReset({ username: 'immosconi136' });
+
+      expect(result).toEqual({ cooldownSeconds: 300 });
+      expect(mockRedis.set).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid', '1', 'EX', 300, 'NX');
+      expect(mockStudentService.sendPasswordResetEmail).toHaveBeenCalled();
+    });
+
+    it('debería lanzar HttpException 429 con retryAfter si el cooldown está activo, sin enviar el mail', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
+      mockRedis.set.mockResolvedValue(null); // NX falló: la clave ya existe
+      mockRedis.ttl.mockResolvedValue(180);
+
+      let caughtError: unknown;
+      try {
+        await service.requestPasswordReset({ username: 'immosconi136' });
+      } catch (e) {
+        caughtError = e;
+      }
+      expect(caughtError).toBeInstanceOf(HttpException);
+      expect((caughtError as HttpException).getStatus()).toBe(429);
+      expect((caughtError as HttpException).getResponse()).toMatchObject({ retryAfter: 180 });
+      expect(mockStudentService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('debería liberar el cooldown si el envío del mail falla', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
+      mockStudentService.sendPasswordResetEmail.mockRejectedValue(new Error('smtp caído'));
+
+      await expect(service.requestPasswordReset({ username: 'immosconi136' })).rejects.toThrow('smtp caído');
+      expect(mockRedis.del).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid');
+    });
+
+    it('no debería tocar Redis si el usuario no existe, está suspendido o no tiene contraseña', async () => {
+      mockStudentService.findForAuth.mockResolvedValueOnce(null);
+      await expect(service.requestPasswordReset({ username: 'x' })).rejects.toThrow(NotFoundException);
+      mockStudentService.findForAuth.mockResolvedValueOnce(makeStudent({ account_status: 'suspended' }));
+      await expect(service.requestPasswordReset({ username: 'x' })).rejects.toThrow(UnauthorizedException);
+      mockStudentService.findForAuth.mockResolvedValueOnce(makeStudent({ password: null }));
+      await expect(service.requestPasswordReset({ username: 'x' })).rejects.toThrow(BadRequestException);
+      expect(mockRedis.set).not.toHaveBeenCalled();
+    });
+
+    describe('configuración (PASSWORD_RESET_COOLDOWN_MS)', () => {
+      const build = (env: Record<string, string>) =>
+        new AuthService(
+          makeConfigService(env) as never, mockJwtService as never, mockCodeService as never,
+          mockOAuthClientService as never, mockRefreshTokenService as never, mockStudentService as never,
+          mockPasswordResetTokenService as never, mockMailService as never, mockRedis as never,
+        );
+
+      it('debería tomar la duración del entorno (ms → segundos, redondeando hacia arriba)', async () => {
+        mockStudentService.findForAuth.mockResolvedValue(makeStudent());
+        const custom = build({ PASSWORD_RESET_COOLDOWN_MS: '60500' });
+
+        const result = await custom.requestPasswordReset({ username: 'immosconi136' });
+
+        expect(result.cooldownSeconds).toBe(61);
+        expect(mockRedis.set).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid', '1', 'EX', 61, 'NX');
+      });
+
+      it.each([['abc'], ['0'], ['-2'], ['2.5']])('debería fallar al arrancar si el valor es inválido (%s)', (bad) => {
+        expect(() => build({ PASSWORD_RESET_COOLDOWN_MS: bad })).toThrow('PASSWORD_RESET_COOLDOWN_MS');
+      });
     });
 
     it('debería lanzar NotFoundException si el usuario no existe', async () => {
@@ -484,6 +572,24 @@ describe('AuthService', () => {
       expect(mockPasswordResetTokenService.generate).toHaveBeenCalledWith('student-uuid', 'setup');
       expect(mockMailService.send).toHaveBeenCalled();
       expect(mockRedis.set).toHaveBeenCalledWith('sso:setup-cooldown:student-uuid', '1', 'EX', 300);
+    });
+
+    it('debería usar PASSWORD_RESET_COOLDOWN_MS como duración del cooldown de setup', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(
+        makeStudent({ password: null, account_status: 'pending_registration' }),
+      );
+      mockRedis.ttl.mockResolvedValue(-2);
+      const custom = new AuthService(
+        makeConfigService({ PASSWORD_RESET_COOLDOWN_MS: '60500' }) as never, mockJwtService as never,
+        mockCodeService as never, mockOAuthClientService as never, mockRefreshTokenService as never,
+        mockStudentService as never, mockPasswordResetTokenService as never, mockMailService as never,
+        mockRedis as never,
+      );
+
+      const result = await custom.resendSetupEmail({ username: 'immosconi136' });
+
+      expect(result.cooldownSeconds).toBe(61);
+      expect(mockRedis.set).toHaveBeenCalledWith('sso:setup-cooldown:student-uuid', '1', 'EX', 61);
     });
 
     it('debería lanzar HttpException 429 con retryAfter si el cooldown está activo', async () => {

@@ -224,7 +224,7 @@ export class StudentService implements IStudentService {
     if (emailExists) throw new ConflictException(`El email "${dto.email}" ya está registrado.`);
 
     const domainRole = await this.domainRoleRepo.findOne({ where: { id: dto.domain_role_id } });
-    if (!domainRole) throw new NotFoundException(`Rol con id ${dto.domain_role_id} no encontrado.`);
+    if (!domainRole) throw new NotFoundException(`Cargo con id ${dto.domain_role_id} no encontrado.`);
     const specialty = await this.specialtyRepo.findOne({ where: { id: dto.specialty_id } });
     if (!specialty) throw new NotFoundException(`Especialidad con id ${dto.specialty_id} no encontrada.`);
 
@@ -268,7 +268,7 @@ export class StudentService implements IStudentService {
     if (dto.birth_date) entity.birth_date = new Date(dto.birth_date);
     if (dto.domain_role_id) {
       const role = await this.domainRoleRepo.findOne({ where: { id: dto.domain_role_id } });
-      if (!role) throw new NotFoundException(`Rol con id ${dto.domain_role_id} no encontrado.`);
+      if (!role) throw new NotFoundException(`Cargo con id ${dto.domain_role_id} no encontrado.`);
       entity.domainRoleId = dto.domain_role_id;
     }
     if (dto.specialty_id) {
@@ -403,7 +403,7 @@ export class StudentService implements IStudentService {
       [
         'Ana', 'Pérez', 33456789, 'ana@ejemplo.com',
         new Date(1998, 10, 22),
-        roles[1]?.name ?? roles[0]?.name ?? 'Docente',
+        roles[1]?.name ?? roles[0]?.name ?? 'Profesor',
         specs[1]?.name ?? specs[0]?.name ?? 'Mecánica',
       ],
     ];

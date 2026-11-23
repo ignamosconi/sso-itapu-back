@@ -47,7 +47,7 @@ describe('DomainRoleService', () => {
   // ── findAll ─────────────────────────────────────────────────────────────────
 
   describe('findAll', () => {
-    it('debería retornar todos los roles mapeados a DTO', async () => {
+    it('debería retornar todos los cargos mapeados a DTO', async () => {
       mockRepo.find.mockResolvedValue([
         makeDomainRole(),
         makeDomainRole({ id: 2, name: 'Docente' }),
@@ -60,7 +60,7 @@ describe('DomainRoleService', () => {
       expect(result[1].name).toBe('Docente');
     });
 
-    it('debería retornar un array vacío si no hay roles', async () => {
+    it('debería retornar un array vacío si no hay cargos', async () => {
       mockRepo.find.mockResolvedValue([]);
       const result = await service.findAll();
       expect(result).toHaveLength(0);
@@ -76,7 +76,7 @@ describe('DomainRoleService', () => {
   // ── findOne ─────────────────────────────────────────────────────────────────
 
   describe('findOne', () => {
-    it('debería retornar el rol si existe', async () => {
+    it('debería retornar el cargo si existe', async () => {
       mockRepo.findOne.mockResolvedValue(makeDomainRole());
 
       const result = await service.findOne(1);
@@ -85,7 +85,7 @@ describe('DomainRoleService', () => {
       expect(result.name).toBe('Alumno');
     });
 
-    it('debería lanzar NotFoundException si el rol no existe', async () => {
+    it('debería lanzar NotFoundException si el cargo no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
       await expect(service.findOne(99)).rejects.toThrow(NotFoundException);
     });
@@ -94,7 +94,7 @@ describe('DomainRoleService', () => {
   // ── create ──────────────────────────────────────────────────────────────────
 
   describe('create', () => {
-    it('debería crear un rol nuevo y retornarlo como DTO', async () => {
+    it('debería crear un cargo nuevo y retornarlo como DTO', async () => {
       mockRepo.findOne.mockResolvedValue(null); // no existe aún
       mockRepo.create.mockReturnValue(makeDomainRole());
       mockRepo.save.mockResolvedValue(makeDomainRole());
@@ -116,7 +116,7 @@ describe('DomainRoleService', () => {
   // ── remove ──────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
-    it('debería eliminar el rol si no hay usuarios asignados', async () => {
+    it('debería eliminar el cargo si no hay usuarios asignados', async () => {
       mockRepo.findOne.mockResolvedValue(makeDomainRole());
       mockRepo.manager.query.mockResolvedValue([{ count: '0' }]);
       mockRepo.remove.mockResolvedValue({});
@@ -126,12 +126,12 @@ describe('DomainRoleService', () => {
       expect(mockRepo.remove).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
     });
 
-    it('debería lanzar NotFoundException si el rol no existe', async () => {
+    it('debería lanzar NotFoundException si el cargo no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
       await expect(service.remove(99)).rejects.toThrow(NotFoundException);
     });
 
-    it('debería lanzar BadRequestException si hay usuarios asignados al rol', async () => {
+    it('debería lanzar BadRequestException si hay usuarios asignados al cargo', async () => {
       mockRepo.findOne.mockResolvedValue(makeDomainRole());
       mockRepo.manager.query.mockResolvedValue([{ count: '5' }]);
 

@@ -52,7 +52,7 @@ Antes de empezar, consultá estos endpoints para no hardcodear valores en tu có
 
 ```http
 GET https://sso.itapu.edu.ar/sso/info/domain-roles
-→ ["Alumno", "Docente", "Autoridad", ...]   // valores posibles del campo "cargo" en /sso/me
+→ ["Alumno", "Profesor", "Autoridad", "No Docente"]   // valores posibles del campo "cargo" en /sso/me
 
 GET https://sso.itapu.edu.ar/sso/info/specialties
 → ["Química", "Mecánica", ...]              // valores posibles del campo "especialidad" en /sso/me
@@ -246,7 +246,7 @@ cp .env.example .env
 | `THROTTLE_GLOBAL_LIMIT` | Máximo de requests por IP en la ventana, para endpoints sin límite propio. | `30` |
 | `THROTTLE_GLOBAL_TTL_MS` | Ventana del límite global, en ms. | `60000` |
 | `DB_HOST` | Host de PostgreSQL. | `localhost` |
-| `DB_PORT` | Puerto de PostgreSQL. | `5432` |
+| `DB_PORT` | Puerto de PostgreSQL. | `5433` |
 | `DB_USERNAME` | Usuario de PostgreSQL. | `postgres` |
 | `DB_PASSWORD` | Password de PostgreSQL. | — |
 | `DB_NAME` | Nombre de la base de datos. | `sso_itapu` |

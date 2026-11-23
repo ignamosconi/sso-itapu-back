@@ -4,6 +4,7 @@ import {
   HttpException, HttpStatus, ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { button, callout, emailLayout, linkText, note, p } from '../../mail/utils/email-layout.js';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import type { IStudentService } from './student.service.interface.js';
@@ -125,15 +126,19 @@ export class StudentService implements IStudentService {
     const link = `${this.adminPanelUrl}/set-password?token=${token}`;
     await this.mailService.send(
       student.email,
-      'Bienvenido/a a ITAPU — Configurá tu contraseña',
-      { html: html`
-        <p>Hola <strong>${student.first_name}</strong>,</p>
-        <p>Tu cuenta fue creada en el sistema de ITAPU.</p>
-        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-        <p>Para configurar tu contraseña hacé clic aquí (el link expira en 24 horas):</p>
-        <p><a href="${link}">${link}</a></p>
-        <p>Si no esperabas este correo, ignoralo.</p>
-        `,
+      'Bienvenido/a a ITAPU - Configurá tu contraseña',
+      {
+        html: emailLayout({
+          title: 'Bienvenido/a',
+          body: html`
+            ${p(html`Hola <strong>${student.first_name}</strong>,`)}
+            ${p('Tu cuenta fue creada en el sistema de ITAPU.')}
+            ${callout(html`Tu nombre de usuario es: <strong>${student.username}</strong>`)}
+            ${p('Para configurar tu contraseña hacé clic aquí (el link expira en 24 horas):')}
+            ${button('Configurar contraseña', link, 'center')}
+            ${note('Si no esperabas este correo, ignoralo.')}
+          `,
+        }),
       },
     );
   }
@@ -143,16 +148,20 @@ export class StudentService implements IStudentService {
     const link = `${this.adminPanelUrl}/set-password?token=${token}`;
     await this.mailService.send(
       student.email,
-      'Restaurar contraseña — ITAPU',
-      { html: html`
-        <p>Hola <strong>${student.first_name}</strong>,</p>
-        <p>Recibimos una solicitud para restaurar tu contraseña.</p>
-        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-        <p>Hacé clic aquí para elegir una nueva contraseña (válido por 24 horas):</p>
-        <p><a href="${link}">${link}</a></p>
-        <p>Si no fuiste vos, ignorá este correo.</p>
-        `,
-      }
+      'Restaurar contraseña ITAPU',
+      {
+        html: emailLayout({
+          title: 'Restaurar contraseña',
+          body: html`
+            ${p(html`Hola <strong>${student.first_name}</strong>,`)}
+            ${p('Recibimos una solicitud para restaurar tu contraseña.')}
+            ${callout(html`Tu nombre de usuario es: <strong>${student.username}</strong>`)}
+            ${p('Hacé clic aquí para elegir una nueva contraseña (válido por 24 horas):')}
+            ${button('Elegir nueva contraseña', link, 'center')}
+            ${note('Si no fuiste vos, ignorá este correo.')}
+          `,
+        }),
+      },
     );
   }
 

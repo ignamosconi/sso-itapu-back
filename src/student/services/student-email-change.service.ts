@@ -2,6 +2,7 @@ import {
   Injectable, Inject, NotFoundException, GoneException, BadRequestException,
   ConflictException, ForbiddenException, HttpStatus,
 } from '@nestjs/common';
+import { button, callout, emailLayout, linkText, note, p } from '../../mail/utils/email-layout.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -142,14 +143,17 @@ export class StudentEmailChangeService implements IStudentEmailChangeService {
     const link = `${this.adminPanelUrl}/confirm-email?token=${plainToken}`;
     try {
       await this.mailService.send(newEmail, 'Confirmá tu nuevo email — ITAPU', {
-        html: html`
-          <p>Hola <strong>${student.first_name}</strong>,</p>
-          <p>Se solicitó cambiar el email de tu cuenta de ITAPU (usuario: <strong>${student.username}</strong>) por esta dirección.</p>
-          <p>Para confirmar el cambio hacé clic aquí (el link expira en ${this.formatDuration(this.ttlMs)}):</p>
-          <p><a href="${link}">${link}</a></p>
-          <p>Al confirmar, se cerrarán todas tus sesiones activas y vas a tener que volver a iniciar sesión.</p>
-          <p>Si no fuiste vos, ignorá este correo: no se hará ningún cambio.</p>
-        `,
+        html: emailLayout({
+          title: 'Confirmá tu nuevo email',
+          body: html`
+            ${p(html`Hola <strong>${student.first_name}</strong>,`)}
+            ${p(html`Se solicitó cambiar el email de tu cuenta de ITAPU (usuario: <strong>${student.username}</strong>) por esta dirección.`)}
+            ${p(html`Para confirmar el cambio hacé clic aquí (el link expira en ${this.formatDuration(this.ttlMs)}):`)}
+            ${button('Confirmar nuevo email', link, 'center')}
+            ${callout('Al confirmar, se cerrarán todas tus sesiones activas y vas a tener que volver a iniciar sesión.', 'info')}
+            ${note('Si no fuiste vos, ignorá este correo: no se hará ningún cambio.')}
+          `,
+        }),
       });
     } catch {
       // Sin mail no hay forma de confirmar: no dejamos una solicitud huérfana.
@@ -162,13 +166,16 @@ export class StudentEmailChangeService implements IStudentEmailChangeService {
     // Aviso al email actual para que el dueño real de la cuenta pueda reaccionar.
     void this.trySend(
       student.email,
-      'Se solicitó cambiar el email de tu cuenta — ITAPU',
-      html`
-        <p>Hola <strong>${student.first_name}</strong>,</p>
-        <p>Se solicitó cambiar el email de tu cuenta de ITAPU (usuario: <strong>${student.username}</strong>) por <strong>${this.maskEmail(newEmail)}</strong>.</p>
-        <p>El cambio solo se aplica si se confirma desde el link enviado a esa dirección.</p>
-        <p>Si no lo pediste vos, contactá a un administrador.</p>
-      `,
+      'Se solicitó cambiar el email de tu cuenta ITAPU',
+      emailLayout({
+        title: 'Se solicitó cambiar el email de tu cuenta',
+        body: html`
+          ${p(html`Hola <strong>${student.first_name}</strong>,`)}
+          ${p(html`Se solicitó cambiar el email de tu cuenta de ITAPU (usuario: <strong>${student.username}</strong>) por <strong>${this.maskEmail(newEmail)}</strong>.`)}
+          ${p('El cambio solo se aplica si se confirma desde el link enviado a esa dirección.')}
+          ${callout('Si no lo pediste vos, contactá a un administrador.', 'danger')}
+        `,
+      }),
     );
   }
 
@@ -231,12 +238,15 @@ export class StudentEmailChangeService implements IStudentEmailChangeService {
     void this.trySend(
       oldEmail,
       'El email de tu cuenta fue cambiado — ITAPU',
-      html`
-        <p>Hola <strong>${student.first_name}</strong>,</p>
-        <p>El email de tu cuenta de ITAPU (usuario: <strong>${student.username}</strong>) fue cambiado a <strong>${this.maskEmail(request.newEmail)}</strong>.</p>
-        <p>Por seguridad, cerramos todas tus sesiones activas.</p>
-        <p>Si no fuiste vos, contactá a un administrador de inmediato.</p>
-      `,
+      emailLayout({
+        title: 'El email de tu cuenta fue cambiado',
+        body: html`
+          ${p(html`Hola <strong>${student.first_name}</strong>,`)}
+          ${p(html`El email de tu cuenta de ITAPU (usuario: <strong>${student.username}</strong>) fue cambiado a <strong>${this.maskEmail(request.newEmail)}</strong>.`)}
+          ${p('Por seguridad, cerramos todas tus sesiones activas.')}
+          ${callout('Si no fuiste vos, contactá a un administrador de inmediato.', 'danger')}
+        `,
+      }),
     );
   }
 

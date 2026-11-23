@@ -4,7 +4,7 @@ import {
   HttpException, HttpStatus, ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { button, callout, emailLayout, linkText, note, p } from '../../mail/utils/email-layout.js';
+import { button, callout, emailLayout, note, p } from '../../mail/utils/email-layout.js';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import type { IStudentService } from './student.service.interface.js';

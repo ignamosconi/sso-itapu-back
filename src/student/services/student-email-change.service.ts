@@ -2,7 +2,7 @@ import {
   Injectable, Inject, NotFoundException, GoneException, BadRequestException,
   ConflictException, ForbiddenException, HttpStatus,
 } from '@nestjs/common';
-import { button, callout, emailLayout, linkText, note, p } from '../../mail/utils/email-layout.js';
+import { button, callout, emailLayout, note, p } from '../../mail/utils/email-layout.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -166,7 +166,7 @@ export class StudentEmailChangeService implements IStudentEmailChangeService {
     // Aviso al email actual para que el dueño real de la cuenta pueda reaccionar.
     void this.trySend(
       student.email,
-      'Se solicitó cambiar el email de tu cuenta ITAPU',
+      'Se solicitó cambiar el email de tu cuenta — ITAPU',
       emailLayout({
         title: 'Se solicitó cambiar el email de tu cuenta',
         body: html`

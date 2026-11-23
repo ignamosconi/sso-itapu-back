@@ -30,6 +30,7 @@ import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
 import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
 import { html } from '../../mail/utils/email-html.js';
+import { button, callout, emailLayout, p } from '../../mail/utils/email-layout.js';
 
 @Injectable()
 export class AuthService implements IAuthService {
@@ -164,13 +165,16 @@ export class AuthService implements IAuthService {
       student.email,
       'Configurá tu contraseña — ITAPU',
       {
-        html: html`
-        <p>Hola <strong>${student.first_name}</strong>,</p>
-        <p>Para iniciar sesión necesitás configurar tu contraseña.</p>
-        <p>Tu nombre de usuario es: <strong>${student.username}</strong></p>
-        <p>Hacé clic aquí (válido por 24 horas):</p>
-        <p><a href="${link}">${link}</a></p>
-        `,
+        html: emailLayout({
+          title: 'Configurá tu contraseña',
+          body: html`
+            ${p(html`Hola <strong>${student.first_name}</strong>,`)}
+            ${p('Para iniciar sesión necesitás configurar tu contraseña.')}
+            ${callout(html`Tu nombre de usuario es: <strong>${student.username}</strong>`)}
+            ${p('Hacé clic aquí (válido por 24 horas):')}
+            ${button('Configurar contraseña', link, 'center')}
+          `,
+        }),
       },
     );
     await this.redis.set(cooldownKey, '1', 'EX', 300);

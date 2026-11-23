@@ -282,21 +282,14 @@
   // ── Success ───────────────────────────────────────────────────────────────
 
   function showSuccessAndClose(code, returnedState) {
-    const isLight = params.get('theme') === 'light';
-    const successBg = isLight ? '#f5f5f5' : '#0f0f1a';
-    const cardBg = isLight ? '#ffffff' : 'rgba(255,255,255,0.06)';
-    const cardBorder = isLight ? '#e0e0e0' : 'rgba(255,255,255,0.12)';
-    const successColor = isLight ? '#1a1a1a' : '#ffffff';
-    const subColor = isLight ? '#666666' : 'rgba(255,255,255,0.5)';
-
-    document.body.style.cssText = `background:${successBg};min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0`;
+    document.body.classList.add('is-success');
     document.body.innerHTML = `
-      <div style="text-align:center;font-family:'Inter',sans-serif;padding:2rem">
-        <div style="background:${cardBg};border:1px solid ${cardBorder};border-radius:12px;padding:1.5rem 2.5rem;display:inline-block;box-shadow:0 8px 32px rgba(0,0,0,0.15);margin-bottom:1.5rem">
-          <div style="font-size:18px;font-weight:600;color:${successColor};margin-bottom:6px">¡Logueo exitoso!</div>
-          <div style="display:inline-block;background:#f5a705;color:#1a1200;font-size:11px;font-weight:600;letter-spacing:0.06em;padding:3px 10px;border-radius:4px;text-transform:uppercase">Autenticado</div>
+      <div class="success-wrap">
+        <div class="success-card">
+          <div class="success-title">¡Logueo exitoso!</div>
+          <div class="badge">Autenticado</div>
         </div>
-        <p style="color:${subColor};font-size:13px;margin:0 0 2rem 0">Cerrá esta página si sigue abierta.</p>
+        <p class="success-sub">Cerrá esta página si sigue abierta.</p>
       </div>
     `;
 

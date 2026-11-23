@@ -32,6 +32,13 @@
   --link-btn-bg:      rgba(255, 255, 255, 0.05);
   --link-btn-border:  rgba(255, 255, 255, 0.12);
   --link-btn-color:   rgba(255, 255, 255, 0.65);
+
+  /* Escena de login exitoso */
+  --success-bg:          #0f0f1a;
+  --success-card-bg:     rgba(255, 255, 255, 0.06);
+  --success-card-border: rgba(255, 255, 255, 0.12);
+  --success-title:       #ffffff;
+  --success-sub:         rgba(255, 255, 255, 0.5);
 }
 
 /* Modo claro */
@@ -59,6 +66,13 @@ body.theme-light {
   --link-btn-border:  rgba(0, 0, 0, 0.1);
   --link-btn-color:   #000000;
   --error-color: #991b1b;
+
+  /* Escena de login exitoso */
+  --success-bg:          #f5f5f5;
+  --success-card-bg:     #ffffff;
+  --success-card-border: #e0e0e0;
+  --success-title:       #1a1a1a;
+  --success-sub:         #666666;
 }
 
 body {
@@ -120,7 +134,7 @@ body {
   background: transparent;
   border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 12px; color: var(--ink);
+  font-weight: 800; font-size: 12px; color: var(--on-accent);
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -341,4 +355,47 @@ body.theme-light .link-btn img {
 }
 body.theme-light .link-btn:hover img {
   filter: opacity(1) drop-shadow(0px 0px 1px var(--accent-text));
+}
+
+/* ── Escena: login exitoso ──────────────────────────────────────────────
+   login.js agrega la clase .is-success al body y reemplaza su contenido.
+   Los colores salen de las variables --success-* según el tema. */
+body.is-success {
+  background: var(--success-bg); /* pisa el fondo con imagen del login */
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.success-wrap {
+  text-align: center;
+  padding: 2rem;
+}
+
+.success-card {
+  display: inline-block;
+  background: var(--success-card-bg);
+  border: 1px solid var(--success-card-border);
+  border-radius: 12px;
+  padding: 1.5rem 2.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  margin-bottom: 1.5rem;
+}
+
+.success-title {
+  color: var(--success-title);
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.success-card .badge {
+  margin-bottom: 0;
+}
+
+.success-sub {
+  color: var(--success-sub);
+  font-size: 13px;
+  margin: 0 0 2rem 0;
 }

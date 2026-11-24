@@ -1,5 +1,6 @@
 import { IsString, MaxLength, MinLength, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsMaxBytes } from '../../common/validators/max-bytes.validator.js';
 
 export class CreateAdminDto {
   @ApiProperty({
@@ -21,5 +22,6 @@ export class CreateAdminDto {
   @IsString()
   @MinLength(8)
   @MaxLength(128)
+  @IsMaxBytes()
   password!: string;
 }

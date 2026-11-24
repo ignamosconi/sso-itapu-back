@@ -67,7 +67,7 @@ export class OAuthClientController implements IOAuthClientController {
   }
 
   @ApiOperation({ summary: 'Crear nuevo cliente OAuth' })
-  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'El plainSecret solo es visible en esta respuesta.' })
+  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'La respuesta no incluye el secret: queda guardado temporalmente en Redis y se entrega al responsable con POST /admin/clients/:id/send-credentials (link de un solo uso).' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
   @AdminThrottle()
@@ -102,7 +102,7 @@ export class OAuthClientController implements IOAuthClientController {
   }
 
   @ApiOperation({ summary: 'Regenerar client secret' })
-  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'El plainSecret solo es visible en esta respuesta.' })
+  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'La respuesta no incluye el secret: queda guardado temporalmente en Redis y se entrega al responsable con POST /admin/clients/:id/send-credentials (link de un solo uso).' })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)

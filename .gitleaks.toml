@@ -1,0 +1,10 @@
+title = "SSO ITAPU - gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Los specs usan solo datos inventados (contraseñas y claves de prueba)"
+paths = [
+  '''\.spec\.ts$''',
+]

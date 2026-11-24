@@ -84,9 +84,6 @@ jobs:
   audit:
     name: Auditoría de dependencias
     runs-on: ubuntu-latest
-    # continue-on-error: mientras xlsx siga instalado desde npm (sin fix publicado) este paso informa pero no bloquea.
-    # Cuando xlsx se instale desde el CDN de SheetJS, quitar esta línea para que bloquee ante vulnerabilidades altas.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

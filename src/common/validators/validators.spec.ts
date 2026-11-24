@@ -1,8 +1,9 @@
-import { redirectUriProblem } from './is-redirect-uri.validator.js';
+import { redirectUriProblem, IsRedirectUri } from './is-redirect-uri.validator.js';
 import { ParseDbIdPipe } from '../pipes/parse-db-id.pipe.js';
 import { BadRequestException } from '@nestjs/common';
 import { validate } from 'class-validator';
 import { IsDbIntString } from './is-db-int.validator.js';
+import { IsMaxBytes } from './max-bytes.validator.js';
 
 describe('redirectUriProblem (N8)', () => {
   it.each([
@@ -39,6 +40,55 @@ describe('redirectUriProblem en producción (localhost)', () => {
     expect(redirectUriProblem('https://app.example.com/cb', prod)).toBeNull());
   it('en desarrollo acepta localhost', () =>
     expect(redirectUriProblem('http://localhost:4000/cb', { NODE_ENV: 'development' })).toBeNull());
+});
+
+describe('@IsRedirectUri con each: el mensaje dice el motivo real', () => {
+  class Dto {
+    @IsRedirectUri({ each: true })
+    redirectUris!: unknown;
+  }
+  const messages = async (redirectUris: unknown, env?: string) => {
+    const prev = process.env.NODE_ENV;
+    if (env) process.env.NODE_ENV = env;
+    try {
+      const dto = Object.assign(new Dto(), { redirectUris });
+      return (await validate(dto)).flatMap(e => Object.values(e.constraints ?? {}));
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  };
+
+  it('localhost en producción: nombra la URI y el motivo', async () => {
+    expect(await messages(['https://ok.example.com/cb', 'http://localhost:3000'], 'production')).toEqual([
+      'La redirect URI «http://localhost:3000» no puede apuntar a localhost en producción.',
+    ]);
+  });
+  it('http fuera de localhost', async () => {
+    const [msg] = await messages(['http://app.example.com/cb']);
+    expect(msg).toContain('debe usar https');
+    expect(msg).not.toContain('debe ser un texto');
+  });
+  it('un valor que no es texto sigue diciendo que debe ser un texto', async () => {
+    expect(await messages([123])).toEqual(['La redirect URI debe ser un texto.']);
+  });
+  it('todas válidas: sin errores', async () => expect(await messages(['https://app.example.com/cb'])).toEqual([]));
+});
+
+describe('@IsMaxBytes (bcrypt corta en 72 bytes)', () => {
+  class Dto {
+    @IsMaxBytes()
+    password!: unknown;
+  }
+  const errors = async (password: unknown) =>
+    (await validate(Object.assign(new Dto(), { password }))).flatMap(e => Object.values(e.constraints ?? {}));
+
+  it('acepta exactamente 72 bytes', async () => expect(await errors('a'.repeat(72))).toEqual([]));
+  it('rechaza 73 bytes', async () =>
+    expect(await errors('a'.repeat(73))).toEqual(['La contraseña no puede superar los 72 bytes (unos 72 caracteres).']));
+  it('cuenta bytes y no caracteres: 37 ñ son 74 bytes', async () =>
+    expect(await errors('ñ'.repeat(37))).toHaveLength(1));
+  it('acepta 36 ñ (72 bytes)', async () => expect(await errors('ñ'.repeat(36))).toEqual([]));
+  it('rechaza valores que no son texto', async () => expect(await errors(12345678)).toHaveLength(1));
 });
 
 describe('ParseDbIdPipe (N12)', () => {

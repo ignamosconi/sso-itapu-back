@@ -1,5 +1,6 @@
 import { IsString, MinLength, IsOptional, MaxLength, Matches, ValidateIf, IsNotEmpty } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsMaxBytes } from '../../common/validators/max-bytes.validator.js';
 
 export class UpdateAdminDto {
   @ApiPropertyOptional({
@@ -23,6 +24,7 @@ export class UpdateAdminDto {
   @IsString()
   @MinLength(8)
   @MaxLength(128)
+  @IsMaxBytes()
   password?: string;
 
   @ApiPropertyOptional({

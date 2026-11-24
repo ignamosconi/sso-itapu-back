@@ -46,7 +46,19 @@ export function IsRedirectUri(options?: ValidationOptions) {
       options,
       validator: {
         validate: (value: unknown) => redirectUriProblem(value) === null,
-        defaultMessage: (args) => `Cada redirect URI ${redirectUriProblem((args?.value as unknown)) ?? 'es inválida.'}`,
+        // Con { each: true } class-validator pasa acá el array completo, no el elemento: hay que buscar
+        // cuál es el inválido para dar el motivo real (antes todo caía en "debe ser un texto").
+        defaultMessage: (args) => {
+          const value = args?.value as unknown;
+          const list = Array.isArray(value) ? (value as unknown[]) : [value];
+          for (const item of list) {
+            const problem = redirectUriProblem(item);
+            if (problem === null) continue;
+            const shown = typeof item === 'string' && item.length > 0 ? ` «${item.slice(0, 80)}»` : '';
+            return `La redirect URI${shown} ${problem}`;
+          }
+          return 'La redirect URI es inválida.';
+        },
       },
     });
   };

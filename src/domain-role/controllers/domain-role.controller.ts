@@ -1,16 +1,17 @@
-import { Controller, Get, Post, Delete, Body, Param, Inject, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { ParseDbIdPipe } from '../../common/pipes/parse-db-id.pipe.js';
+import { Controller, Get, Post, Delete, Body, Param, Inject, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { IDomainRoleController } from './domain-role.controller.interface.js';
 import type { IDomainRoleService } from '../services/domain-role.service.interface.js';
 import { CreateDomainRoleDto } from '../dtos/create-domain-role.dto.js';
 import { DomainRoleResponseDto } from '../dtos/domain-role-response.dto.js';
-import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
-import { SkipThrottle } from '@nestjs/throttler';
+import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard.js';
+import { AdminThrottle } from '../../common/decorators/admin-throttle.decorator.js';
 
 @ApiTags('Admin — Cargos institucionales')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
-@SkipThrottle()
+@AdminThrottle()
 @Controller('admin/domain-roles')
 export class DomainRoleController implements IDomainRoleController {
   constructor(
@@ -27,7 +28,7 @@ export class DomainRoleController implements IDomainRoleController {
   @ApiResponse({ status: 200, type: DomainRoleResponseDto })
   @ApiResponse({ status: 404, description: 'Cargo no encontrado' })
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number): Promise<DomainRoleResponseDto> {
+  findOne(@Param('id', ParseDbIdPipe) id: number): Promise<DomainRoleResponseDto> {
     return this.service.findOne(id);
   }
 
@@ -47,7 +48,7 @@ export class DomainRoleController implements IDomainRoleController {
   @ApiResponse({ status: 400, description: 'Hay usuarios con este cargo' })
   @ApiResponse({ status: 404, description: 'Cargo no encontrado' })
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
+  remove(@Param('id', ParseDbIdPipe) id: number): Promise<void> {
     return this.service.remove(id);
   }
 }

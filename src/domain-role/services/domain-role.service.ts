@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import type { IDomainRoleService } from './domain-role.service.interface.js';
 import { DomainRoleEntity } from '../entities/domain-role.entity.js';
 import { CreateDomainRoleDto } from '../dtos/create-domain-role.dto.js';
@@ -28,9 +28,11 @@ export class DomainRoleService implements IDomainRoleService {
   }
 
   async create(dto: CreateDomainRoleDto): Promise<DomainRoleResponseDto> {
-    const exists = await this.repo.findOne({ where: { name: dto.name } });
-    if (exists) throw new ConflictException(`El cargo "${dto.name}" ya existe.`);
-    return this.toDto(await this.repo.save(this.repo.create({ name: dto.name })));
+    const name = dto.name.trim();
+    // ILIKE sin comodines: compara sin distinguir mayúsculas (N16)
+    const exists = await this.repo.findOne({ where: { name: ILike(name.replace(/[\\%_]/g, '\\$&')) } });
+    if (exists) throw new ConflictException(`El cargo "${name}" ya existe.`);
+    return this.toDto(await this.repo.save(this.repo.create({ name })));
   }
 
   async remove(id: number): Promise<void> {

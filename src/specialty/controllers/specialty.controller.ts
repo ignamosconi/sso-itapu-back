@@ -1,16 +1,17 @@
-import { Controller, Get, Post, Delete, Body, Param, Inject, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { ParseDbIdPipe } from '../../common/pipes/parse-db-id.pipe.js';
+import { Controller, Get, Post, Delete, Body, Param, Inject, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { ISpecialtyController } from './specialty.controller.interface.js';
 import type { ISpecialtyService } from '../services/specialty.service.interface.js';
 import { CreateSpecialtyDto } from '../dtos/create-specialty.dto.js';
 import { SpecialtyResponseDto } from '../dtos/specialty-response.dto.js';
-import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
-import { SkipThrottle } from '@nestjs/throttler';
+import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard.js';
+import { AdminThrottle } from '../../common/decorators/admin-throttle.decorator.js';
 
 @ApiTags('Admin — Especialidades')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
-@SkipThrottle()
+@AdminThrottle()
 @Controller('admin/specialties')
 export class SpecialtyController implements ISpecialtyController {
   constructor(
@@ -27,7 +28,7 @@ export class SpecialtyController implements ISpecialtyController {
   @ApiResponse({ status: 200, type: SpecialtyResponseDto })
   @ApiResponse({ status: 404, description: 'Especialidad no encontrada' })
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number): Promise<SpecialtyResponseDto> {
+  findOne(@Param('id', ParseDbIdPipe) id: number): Promise<SpecialtyResponseDto> {
     return this.service.findOne(id);
   }
 
@@ -47,7 +48,7 @@ export class SpecialtyController implements ISpecialtyController {
   @ApiResponse({ status: 400, description: 'Hay usuarios con esta especialidad' })
   @ApiResponse({ status: 404, description: 'Especialidad no encontrada' })
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
+  remove(@Param('id', ParseDbIdPipe) id: number): Promise<void> {
     return this.service.remove(id);
   }
 }

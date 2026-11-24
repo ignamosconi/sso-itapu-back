@@ -30,6 +30,7 @@ describe('CredentialTokenService', () => {
   beforeEach(async () => {
     mockRepo = {
       save: jest.fn(),
+      update: jest.fn().mockResolvedValue({}),
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
@@ -82,7 +83,7 @@ describe('CredentialTokenService', () => {
 
       // Verifica que se invalidaron tokens previos
       expect(mockRepo.createQueryBuilder).toHaveBeenCalled();
-      expect(updateQb.set).toHaveBeenCalledWith({ used: true });
+      expect(updateQb.set).toHaveBeenCalledWith({ used: true, encryptedSecret: '' });
       expect(updateQb.where).toHaveBeenCalledWith('"oauthClientId" = :clientId', { clientId: 1 });
       expect(updateQb.andWhere).toHaveBeenCalledWith('used = false');
       expect(updateQb.execute).toHaveBeenCalled();
@@ -149,6 +150,8 @@ describe('CredentialTokenService', () => {
       expect(result.plainSecret).toBe('mi-secret-plain');
       expect(result.clientName).toBe('TestApp');
       expect(result.redirectUris).toEqual(['https://app.com/callback']);
+      // N9: tras entregar el secret se borra de la base
+      expect(mockRepo.update).toHaveBeenCalledWith({ id: record.id }, { encryptedSecret: '' });
     });
 
     it('debería lanzar NotFoundException si el token no existe', async () => {

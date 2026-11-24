@@ -1,4 +1,3 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { CodeService } from './code.service.js';
 import { UserInfoOauthDto } from '../../auth/dtos/user-info-oauth.dto.js';
@@ -13,107 +12,61 @@ const mockUserInfo: UserInfoOauthDto = {
   cargo: 'Alumno',
 };
 
-describe('CodeService', () => {
+/** Redis mínimo en memoria: SET ... PX y GETDEL (con expiración simulada). */
+function fakeRedis() {
+  const store = new Map<string, { v: string; exp: number }>();
+  return {
+    store,
+    set: jest.fn((k: string, v: string, _px: string, ttl: number) => { store.set(k, { v, exp: Date.now() + ttl }); return Promise.resolve('OK'); }),
+    getdel: jest.fn((k: string) => {
+      const e = store.get(k); store.delete(k);
+      return Promise.resolve(e && Date.now() <= e.exp ? e.v : null);
+    }),
+  };
+}
+
+describe('CodeService (Redis)', () => {
+  let redis: ReturnType<typeof fakeRedis>;
   let service: CodeService;
+  const REDIRECT = 'https://app.example.com/cb';
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        CodeService,
-        {
-          provide: ConfigService,
-          useValue: {
-            getOrThrow: (key: string) => {
-              if (key === 'CODE_TTL_MS') return '120000';
-              throw new Error(`Config key not found: ${key}`);
-            },
-          },
-        },
-      ],
-    }).compile();
-
-    service = module.get<CodeService>(CodeService);
+  beforeEach(() => {
+    redis = fakeRedis();
+    const config = { getOrThrow: (k: string) => { if (k === 'CODE_TTL_MS') return '120000'; throw new Error(k); } };
+    service = new CodeService(config as unknown as ConfigService, redis as never);
   });
 
-  afterEach(() => {
-    service.onModuleDestroy();
+  it('genera códigos únicos, no predecibles y con TTL en Redis', async () => {
+    const a = await service.generate(mockUserInfo, 1, REDIRECT);
+    const b = await service.generate(mockUserInfo, 1, REDIRECT);
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(redis.set).toHaveBeenCalledWith(`sso:code:${a}`, expect.any(String), 'PX', 120000);
   });
 
-  describe('generate', () => {
-    it('debería generar un código único', () => {
-      const code1 = service.generate(mockUserInfo, 1);
-      const code2 = service.generate(mockUserInfo, 1);
-      expect(code1).toBeDefined();
-      expect(code2).toBeDefined();
-      expect(code1).not.toBe(code2);
-    });
-
-    it('debería generar un string no vacío', () => {
-      const code = service.generate(mockUserInfo, 1);
-      expect(typeof code).toBe('string');
-      expect(code.length).toBeGreaterThan(0);
-    });
+  it('consume devuelve userInfo, clientId y redirectUri', async () => {
+    const code = await service.generate(mockUserInfo, 42, REDIRECT);
+    expect(await service.consume(code)).toEqual({ userInfo: mockUserInfo, clientId: 42, redirectUri: REDIRECT });
   });
 
-  describe('consume', () => {
-    it('debería retornar el userInfo y clientId al consumir un código válido', () => {
-      const code = service.generate(mockUserInfo, 42);
-      const result = service.consume(code);
-      expect(result).not.toBeNull();
-      expect(result!.userInfo).toEqual(mockUserInfo);
-      expect(result!.clientId).toBe(42);
-    });
-
-    it('debería retornar null al consumir un código inexistente', () => {
-      const result = service.consume('codigo-inexistente');
-      expect(result).toBeNull();
-    });
-
-    it('debería retornar null al consumir el mismo código dos veces (un solo uso)', () => {
-      const code = service.generate(mockUserInfo, 1);
-      service.consume(code);
-      const result = service.consume(code);
-      expect(result).toBeNull();
-    });
-
-    it('debería retornar null si el código expiró', () => {
-      // Creamos un service con TTL de 1ms
-      const fastService = new CodeService({
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        getOrThrow: (_key: string) => '1',
-      } as unknown as ConfigService);
-      const code = fastService.generate(mockUserInfo, 1);
-
-      // Esperamos a que expire
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          const result = fastService.consume(code);
-          expect(result).toBeNull();
-          fastService.onModuleDestroy();
-          resolve();
-        }, 10);
-      });
-    });
+  it('el código es de un solo uso (P5/atómico)', async () => {
+    const code = await service.generate(mockUserInfo, 1, REDIRECT);
+    expect(await service.consume(code)).not.toBeNull();
+    expect(await service.consume(code)).toBeNull();
   });
 
-  describe('purgeExpired (via consume)', () => {
-    it('debería retornar null para un código que fue purgado por expiración', () => {
-      const fastService = new CodeService({
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        getOrThrow: (_key: string) => '1',
-      } as unknown as ConfigService);
-      const code = fastService.generate(mockUserInfo, 1);
+  it('devuelve null para un código inexistente', async () => {
+    expect(await service.consume('no-existe')).toBeNull();
+  });
 
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          // El código expiró — purgeExpired lo habrá limpiado en el próximo ciclo
-          // o consume lo descarta por expiresAt
-          const result = fastService.consume(code);
-          expect(result).toBeNull();
-          fastService.onModuleDestroy();
-          resolve();
-        }, 10);
-      });
-    });
+  it('devuelve null si expiró', async () => {
+    const code = await service.generate(mockUserInfo, 1, REDIRECT);
+    redis.store.get(`sso:code:${code}`)!.exp = Date.now() - 1;
+    expect(await service.consume(code)).toBeNull();
+  });
+
+  it('devuelve null (sin tirar) si el valor guardado está corrupto', async () => {
+    redis.store.set('sso:code:x', { v: '{no-json', exp: Date.now() + 1000 });
+    expect(await service.consume('x')).toBeNull();
   });
 });

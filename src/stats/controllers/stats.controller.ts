@@ -3,13 +3,13 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import type { IStatsController } from './stats.controller.interface.js';
 import type { IStatsService } from '../services/stats.service.interface.js';
 import { DashboardStatsDto } from '../dtos/dashboard-stats.dto.js';
-import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
-import { SkipThrottle } from '@nestjs/throttler';
+import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard.js';
+import { AdminThrottle } from '../../common/decorators/admin-throttle.decorator.js';
 
 @ApiTags('Admin — Estadísticas')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
-@SkipThrottle()
+@AdminThrottle()
 @Controller('admin/stats')
 export class StatsController implements IStatsController {
   constructor(

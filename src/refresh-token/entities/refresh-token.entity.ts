@@ -23,6 +23,10 @@ export class RefreshTokenEntity {
   @Column({ default: false })
   used!: boolean;
 
+  // Momento en que se canjeó (rotó) el token. Sirve para tolerar refresh concurrentes (P9).
+  @Column({ nullable: true, type: 'timestamp' })
+  usedAt!: Date | null;
+
   @Column({ default: false })
   revoked!: boolean;
 

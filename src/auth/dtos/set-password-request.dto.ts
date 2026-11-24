@@ -4,6 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class SetPasswordRequestDto {
   @ApiProperty({ description: 'Token recibido por email.' })
   @IsString()
+  @MaxLength(256)
   token!: string;
 
   @ApiProperty({ minLength: 8 })
@@ -15,5 +16,6 @@ export class SetPasswordRequestDto {
   @ApiProperty({ minLength: 8, description: 'Debe coincidir con password.' })
   @IsString()
   @MinLength(8)
+  @MaxLength(128)
   confirmPassword!: string;
 }

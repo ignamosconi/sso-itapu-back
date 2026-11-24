@@ -10,6 +10,7 @@ export interface IOAuthClientService {
   findOne(id: number): Promise<OAuthClientResponseDto>;
     findInfo(id: number, redirectUri?: string): Promise<OAuthClientInfoDto>;
   validateClient(id: number, secret: string, redirectUri: string): Promise<boolean>;
+  authenticateClient(id: number, secret: string): Promise<boolean>;
   create(dto: CreateOAuthClientDto, adminId: string): Promise<OAuthClientCreatedResponseDto>;
   update(id: number, dto: UpdateOAuthClientDto): Promise<OAuthClientResponseDto>;
   remove(id: number): Promise<void>;

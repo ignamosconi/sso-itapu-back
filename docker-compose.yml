@@ -5,18 +5,19 @@ services:
     image: postgres:16-alpine
     container_name: sso_itapu_db
     environment:
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME:?Definí DB_USERNAME en el .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Definí DB_PASSWORD en el .env}
+      POSTGRES_DB: ${DB_NAME:?Definí DB_NAME en el .env}
     ports:
-      - "5433:5432"
+      # Solo localhost: antes "5433:5432" exponía Postgres a toda la red del host.
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
     container_name: sso_itapu_redis
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD:?Definí REDIS_PASSWORD en el .env}
     ports:
       - "127.0.0.1:6379:6379"
     volumes:

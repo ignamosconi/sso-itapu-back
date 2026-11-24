@@ -3,8 +3,8 @@ import { REDIS_CLIENT } from '../../redis/redis.module.js';
 import { Injectable, NotFoundException, BadRequestException, ConflictException, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { StudentEntity } from '../../student/entities/student.entity.js';
-import type { IStudentService } from '../../student/services/student.service.interface.js';
+import { StudentEntity } from '../../student/students/entities/student.entity.js';
+import type { IStudentService } from '../../student/students/services/student.service.interface.js';
 import { html, trusted } from '../../mail/utils/email-html.js';
 import { bulletList, callout, code, emailLayout, keyValueTable, label, p, sectionTitle, stepCard } from '../../mail/utils/email-layout.js';
 import { randomBytes } from 'crypto';
@@ -152,6 +152,13 @@ export class OAuthClientService implements IOAuthClientService {
     };
   }
 
+  /** Autentica a la app (client_id + client_secret) sin mirar redirect_uri. Para /refresh y /logout. */
+  async authenticateClient(id: number, secret: string): Promise<boolean> {
+    const client = await this.clientRepository.findOne({ where: { id } });
+    if (!client || !client.isActive) return false;
+    return bcrypt.compare(secret, client.clientSecret);
+  }
+
   async validateClient(id: number, secret: string, redirectUri: string): Promise<boolean> {
     const client = await this.clientRepository.findOne({ where: { id } });
     if (!client) return false;
@@ -293,12 +300,12 @@ export class OAuthClientService implements IOAuthClientService {
     const credentialsUrl = `${ssoUrl}/credentials/${token}`;
 
     const steps: Array<[string, string]> = [
-      ['1. Abrir popup de login', html`${code(`${ssoUrl}/sso/login?client_id=${client.id}&redirect_uri=TU_URI&state=ALEATORIO&theme=dark`)}<br>El popup pide usuario y contraseña. Si el usuario no configuró contraseña, el SSO le envía un email automáticamente.`],
+      ['1. Abrir popup de login', html`${code(`${ssoUrl}/sso/login?client_id=${client.id}&redirect_uri=TU_URI&state=ALEATORIO&theme=dark`)}<br>El popup pide usuario y contraseña. Si es la primera vez o no la recuerda, el alumno usa el botón «Es mi primera vez / Olvidé mi contraseña» y recibe un correo para configurarla. Tu ${code('redirect_uri')} tiene que coincidir <strong>exactamente</strong> con una de las registradas arriba, y el popup le muestra al alumno el dominio al que va a volver.`],
       ['2. Escuchar postMessage', html`Verificá ${code(`event.origin === "${ssoUrl}"`)} y el ${code('state')} antes de procesar. Nunca omitas estas verificaciones.`],
-      ['3. Canjear code por tokens', html`${code(`POST ${ssoUrl}/sso/token`)} desde tu <strong>backend</strong> con client_secret. El code es de un solo uso y expira en 2 minutos.`],
-      ['4. Identificar al usuario', html`${code(`GET ${ssoUrl}/sso/me`)} con ${code('Authorization: Bearer ACCESS_TOKEN')}. Usá ${code('sub')} como ID único (no cambia nunca). Los campos ${code('cargo')} y ${code('especialidad')} reflejan los valores configurados por el administrador.`],
-      ['5. Renovar tokens', html`${code(`POST ${ssoUrl}/sso/refresh`)} cuando el access_token expire (cada 15 min). Reemplazá <strong>ambos</strong> tokens con la respuesta (el refresh anterior queda inválido).`],
-      ['6. Cerrar sesión', html`${code(`POST ${ssoUrl}/sso/logout`)} con el refresh_token. También eliminá los tokens del almacenamiento de tu app.`],
+      ['3. Canjear code por tokens', html`${code(`POST ${ssoUrl}/sso/token`)} desde tu <strong>backend</strong> con ${code('client_id')}, ${code('client_secret')}, ${code('code')} y la <strong>misma</strong> ${code('redirect_uri')} que usaste en el login (si es otra, el canje se rechaza). El code es de un solo uso y expira en 2 minutos. Los tokens son JWT con ${code('iss')} = ${code(ssoUrl)} y ${code('aud')} = tu client_id: validalos en tu backend.`],
+      ['4. Identificar al usuario', html`${code(`GET ${ssoUrl}/sso/me`)} con ${code('Authorization: Bearer ACCESS_TOKEN')}. Usá ${code('sub')} como ID único (no cambia nunca). También devuelve ${code('aud')}: tiene que ser tu client_id. Los campos ${code('cargo')} y ${code('especialidad')} reflejan los valores configurados por el administrador.`],
+      ['5. Renovar tokens', html`${code(`POST ${ssoUrl}/sso/refresh`)} desde tu <strong>backend</strong>, con ${code('client_id')}, ${code('client_secret')} y ${code('refresh_token')}, cuando el access_token expire (cada 15 min). Reemplazá <strong>ambos</strong> tokens con la respuesta (el refresh anterior queda inválido). Si dos pedidos renuevan a la vez con el mismo token, uno recibe 401: usá el token más reciente. Si el alumno fue suspendido o eliminado, también responde 401 y la sesión se revoca.`],
+      ['6. Cerrar sesión', html`${code(`POST ${ssoUrl}/sso/logout`)} desde tu <strong>backend</strong>, con ${code('client_id')}, ${code('client_secret')} y ${code('refresh_token')}. También eliminá los tokens del almacenamiento de tu app.`],
     ];
 
     try {
@@ -328,12 +335,15 @@ export class OAuthClientService implements IOAuthClientService {
               'El usuario hace logout → tokens revocados en el servidor.',
               'Inactividad de 8 horas sin usar el refresh_token.',
               'Límite absoluto de 3 días desde el primer login.',
-              'Reutilización de un refresh_token ya usado → familia completa revocada al instante.',
+              'Reutilización de un refresh_token ya usado (fuera de unos segundos de tolerancia para pedidos simultáneos) → familia completa revocada al instante.',
+              'El alumno es suspendido o eliminado → la próxima renovación falla y la sesión se revoca.',
+              'El alumno cambia su contraseña → todas sus sesiones se revocan.',
             ])}
             ${sectionTitle('Seguridad')}
             ${callout(
               bulletList([
-                'Nunca expongas el Client Secret en el frontend.',
+                'Nunca expongas el Client Secret en el frontend. /sso/token, /sso/refresh y /sso/logout se llaman solo desde tu backend.',
+                html`Al recibir un access_token en tu backend verificá ${code('iss')} (la URL del SSO) y ${code('aud')} (tu client_id).`,
                 html`Guardá los tokens en cookies ${code('HttpOnly')} o en el backend, nunca en localStorage.`,
                 'El authorization code es de un solo uso y expira en 2 minutos.',
                 html`Verificá siempre ${code('event.origin')} y ${code('state')} en el postMessage.`,

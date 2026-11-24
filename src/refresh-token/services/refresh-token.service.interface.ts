@@ -14,7 +14,7 @@ export interface SaveRefreshTokenParams {
 export interface IRefreshTokenService {
   save(params: SaveRefreshTokenParams): Promise<void>;
   consume(token: string): Promise<RefreshTokenEntity>;
-  revokeFamily(token: string): Promise<void>;
+  revokeFamily(token: string, clientId?: number): Promise<void>;
   revokeAllForSub(sub: string, manager?: EntityManager): Promise<void>;
   // Revoca todos los refresh tokens activos de alumnos asociados a una app OAuth.
   // Se llama al suspender o eliminar un cliente OAuth.

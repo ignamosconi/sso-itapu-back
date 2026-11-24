@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import type { IStatsService } from './stats.service.interface.js';
 import { DashboardStatsDto, SpecialtyCountDto } from '../dtos/dashboard-stats.dto.js';
 import { OAuthClientEntity } from '../../oauth-client/entities/oauth-client.entity.js';
-import { StudentEntity, AccountStatus } from '../../student/entities/student.entity.js';
+import { StudentEntity, AccountStatus } from '../../student/students/entities/student.entity.js';
 
 @Injectable()
 export class StatsService implements IStatsService {

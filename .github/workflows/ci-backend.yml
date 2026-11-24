@@ -80,3 +80,30 @@ jobs:
           name: coverage-backend
           path: coverage/
           retention-days: 7
+
+  audit:
+    name: Auditoría de dependencias
+    runs-on: ubuntu-latest
+    # continue-on-error: mientras xlsx siga instalado desde npm (sin fix publicado) este paso informa pero no bloquea.
+    # Cuando xlsx se instale desde el CDN de SheetJS, quitar esta línea para que bloquee ante vulnerabilidades altas.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: npm audit (solo dependencias de producción)
+        run: npm audit --omit=dev --audit-level=high
+
+  secrets-scan:
+    name: Búsqueda de secretos (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

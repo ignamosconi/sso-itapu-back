@@ -1,17 +1,16 @@
 jest.mock('bcrypt', () => ({
   compare: jest.fn(),
   hash: jest.fn().mockResolvedValue('$2b$10$hashed'),
+  hashSync: jest.fn().mockReturnValue('$2b$10$dummyhash'),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  UnauthorizedException, NotFoundException, BadRequestException, HttpException,
-} from '@nestjs/common';
+import { UnauthorizedException, BadRequestException, HttpException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service.js';
-import { StudentCredentialsDto } from '../../student/dtos/student-credentials.dto.js';
+import { StudentCredentialsDto } from '../../student/students/dtos/student-credentials.dto.js';
 import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
 
@@ -28,6 +27,21 @@ function makeStudent(overrides: Partial<StudentCredentialsDto> = {}): StudentCre
     account_status: 'active',
     domainRoleName: 'Alumno',
     specialtyName: 'Mecánica',
+    ...overrides,
+  };
+}
+
+/** Lo que devuelve studentService.findOne (StudentResponseDto), usado al renovar la sesión. */
+function makeStudentDto(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'student-uuid',
+    username: 'immosconi136',
+    first_name: 'Ignacio',
+    last_name: 'Mosconi',
+    email: 'alumno@gmail.com',
+    account_status: 'active',
+    domainRole: { id: 1, name: 'Alumno' },
+    specialty: { id: 1, name: 'Mecánica' },
     ...overrides,
   };
 }
@@ -58,6 +72,7 @@ function makeConfigService(env: Record<string, string> = {}) {
     JWT_REFRESH_EXPIRES_IN: '8h',
     JWT_REFRESH_SESSION_MAX_DURATION: '3d',
     ADMIN_PANEL_URL: 'http://localhost:5173',
+    SSO_BASE_URL: 'https://sso.itapu.test/',
   };
   return {
     getOrThrow: (key: string) => {
@@ -67,6 +82,8 @@ function makeConfigService(env: Record<string, string> = {}) {
     get: (key: string) => env[key],
   };
 }
+
+const flush = () => new Promise(resolve => setImmediate(resolve));
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
@@ -79,6 +96,7 @@ describe('AuthService', () => {
   let mockPasswordResetTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRedis: jest.Mocked<Record<string, jest.Mock>>;
+  let mockLoginAttempts: jest.Mocked<Record<string, jest.Mock>>;
   let mockJwtService: jest.Mocked<Partial<JwtService>>;
 
   beforeEach(async () => {
@@ -90,39 +108,36 @@ describe('AuthService', () => {
       setPassword: jest.fn().mockResolvedValue(undefined),
       sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
     };
-
     mockCodeService = {
-      generate: jest.fn().mockReturnValue('generated-code'),
+      generate: jest.fn().mockResolvedValue('generated-code'),
       consume: jest.fn(),
     };
-
     mockOAuthClientService = {
       findOne: jest.fn(),
       validateClient: jest.fn(),
+      authenticateClient: jest.fn().mockResolvedValue(true),
     };
-
     mockRefreshTokenService = {
       save: jest.fn().mockResolvedValue(undefined),
       consume: jest.fn(),
       revokeFamily: jest.fn().mockResolvedValue(undefined),
     };
-
     mockPasswordResetTokenService = {
       generate: jest.fn().mockResolvedValue('reset-token'),
       validate: jest.fn(),
       consume: jest.fn(),
     };
-
-    mockMailService = {
-      send: jest.fn().mockResolvedValue(undefined),
-    };
-
+    mockMailService = { send: jest.fn().mockResolvedValue(undefined) };
     mockRedis = {
-      ttl: jest.fn().mockResolvedValue(-2), // -2 = clave inexistente → sin cooldown activo
+      ttl: jest.fn().mockResolvedValue(-2),
       set: jest.fn().mockResolvedValue('OK'),
       del: jest.fn().mockResolvedValue(1),
     };
-
+    mockLoginAttempts = {
+      assertNotLocked: jest.fn().mockResolvedValue(undefined),
+      registerFailure: jest.fn().mockResolvedValue(undefined),
+      reset: jest.fn().mockResolvedValue(undefined),
+    };
     mockJwtService = {
       signAsync: jest.fn().mockResolvedValue('signed-jwt'),
       verifyAsync: jest.fn(),
@@ -139,6 +154,7 @@ describe('AuthService', () => {
         { provide: 'IPasswordResetTokenService', useValue: mockPasswordResetTokenService },
         { provide: 'IMailService', useValue: mockMailService },
         { provide: 'REDIS_CLIENT', useValue: mockRedis },
+        { provide: 'ILoginAttemptsService', useValue: mockLoginAttempts },
         { provide: ConfigService, useValue: makeConfigService() },
       ],
     }).compile();
@@ -146,505 +162,400 @@ describe('AuthService', () => {
     service = module.get<AuthService>(AuthService);
   });
 
-  // ── validateAndGetUserInfo ──────────────────────────────────────────────────
+  // ── validateAndGetUserInfo (P1 / P2) ────────────────────────────────────────
 
   describe('validateAndGetUserInfo', () => {
-    it('debería retornar userInfo si las credenciales son válidas', async () => {
+    const GENERIC = 'Usuario o contraseña incorrectos.';
+
+    it('retorna userInfo y limpia el contador de intentos si las credenciales son válidas', async () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       const result = await service.validateAndGetUserInfo(loginDto);
-      expect(result.sub).toBe('student-uuid');
-      expect(result.username).toBe('immosconi136');
-      expect(result.cargo).toBe('Alumno');
+
+      expect(result).toEqual(userInfo);
+      expect(mockLoginAttempts.reset).toHaveBeenCalledWith('immosconi136');
     });
 
-    it('debería lanzar UnauthorizedException si el alumno no existe', async () => {
+    it('P2: si la cuenta está bloqueada corta antes de tocar la base o bcrypt', async () => {
+      mockLoginAttempts.assertNotLocked.mockRejectedValue(new HttpException('bloqueada', 429));
+
+      await expect(service.validateAndGetUserInfo(loginDto)).rejects.toThrow(HttpException);
+      expect(mockStudentService.findForAuth).not.toHaveBeenCalled();
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['usuario inexistente', null, false],
+      ['sin contraseña (pendiente)', makeStudent({ password: null, account_status: 'pending_registration' }), false],
+      ['contraseña incorrecta', makeStudent(), false],
+      ['pendiente aun con "contraseña correcta"', makeStudent({ account_status: 'pending_registration' }), true],
+      ['suspendido con contraseña INCORRECTA', makeStudent({ account_status: 'suspended' }), false],
+    ])('P1: %s → mensaje genérico y cuenta como intento fallido', async (_n, student, compareResult) => {
+      mockStudentService.findForAuth.mockResolvedValue(student);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(compareResult);
+
+      await expect(service.validateAndGetUserInfo(loginDto)).rejects.toThrow(GENERIC);
+      expect(mockLoginAttempts.registerFailure).toHaveBeenCalledWith('immosconi136');
+      expect(mockLoginAttempts.reset).not.toHaveBeenCalled();
+    });
+
+    it('P1: hace bcrypt.compare SIEMPRE, también para un usuario inexistente (contra un hash descartable)', async () => {
       mockStudentService.findForAuth.mockResolvedValue(null);
-      await expect(service.validateAndGetUserInfo(loginDto as never))
-        .rejects.toThrow(UnauthorizedException);
-    });
-
-    it('debería lanzar UnauthorizedException si la cuenta no tiene contraseña', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ password: null }));
-      await expect(service.validateAndGetUserInfo(loginDto as never))
-        .rejects.toThrow(UnauthorizedException);
-    });
-
-    it('debería lanzar UnauthorizedException si la cuenta está suspendida', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ account_status: 'suspended' }));
-      await expect(service.validateAndGetUserInfo(loginDto as never))
-        .rejects.toThrow(UnauthorizedException);
-    });
-
-    it('debería lanzar UnauthorizedException si la cuenta está en pending_registration', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(
-        makeStudent({ account_status: 'pending_registration' }),
-      );
-      await expect(service.validateAndGetUserInfo(loginDto as never))
-        .rejects.toThrow(UnauthorizedException);
-    });
-
-    it('debería lanzar UnauthorizedException si la contraseña es incorrecta', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-      await expect(service.validateAndGetUserInfo(loginDto as never))
-        .rejects.toThrow(UnauthorizedException);
+
+      await expect(service.validateAndGetUserInfo(loginDto)).rejects.toThrow(UnauthorizedException);
+      expect(bcrypt.compare).toHaveBeenCalledWith('password123', '$2b$10$dummyhash');
+    });
+
+    it('P1: solo con la contraseña CORRECTA se informa que la cuenta está suspendida (sin sumar intento)', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ account_status: 'suspended' }));
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await expect(service.validateAndGetUserInfo(loginDto)).rejects.toThrow('suspendida');
+      expect(mockLoginAttempts.registerFailure).not.toHaveBeenCalled();
     });
   });
 
-  // ── checkUsername ───────────────────────────────────────────────────────────
+  // ── Mails de acceso (P1) ────────────────────────────────────────────────────
 
-  describe('checkUsername', () => {
-    it('debería retornar has_password si el usuario tiene contraseña configurada', async () => {
+  describe.each(['requestPasswordReset', 'resendSetupEmail'] as const)('%s', (method) => {
+    const call = (username = 'immosconi136') => service[method]({ username });
+
+    it('cuenta con contraseña → mail de restauración, cooldown por username (SET NX) y 200 uniforme', async () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      const result = await service.checkUsername({ username: 'immosconi136' });
-      expect(result.status).toBe('has_password');
-      expect(result.maskedEmail).toBeUndefined();
-    });
 
-    it('has_password: debería retornar resetCooldownSeconds: 0 si no hay cooldown de reset activo', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      mockRedis.ttl.mockResolvedValue(-2);
-      const result = await service.checkUsername({ username: 'immosconi136' });
-      expect(result.status).toBe('has_password');
-      expect(result.resetCooldownSeconds).toBe(0);
-      expect(mockRedis.ttl).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid');
-    });
-
-    it('has_password: debería retornar el tiempo restante del cooldown de reset si está activo', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      mockRedis.ttl.mockResolvedValue(120);
-      const result = await service.checkUsername({ username: 'immosconi136' });
-      expect(result.resetCooldownSeconds).toBe(120);
-    });
-
-    it('debería retornar no_password con cooldownSeconds: 0 si no hay cooldown activo', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(
-        makeStudent({ password: null, account_status: 'pending_registration' }),
-      );
-      mockRedis.ttl.mockResolvedValue(-2);
-      const result = await service.checkUsername({ username: 'immosconi136' });
-      expect(result.status).toBe('no_password');
-      expect(result.maskedEmail).toBeDefined();
-      expect(result.cooldownSeconds).toBe(0);
-      expect(mockPasswordResetTokenService.generate).not.toHaveBeenCalled();
-    });
-
-    it('debería retornar no_password con cooldownSeconds restante si hay cooldown activo', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(
-        makeStudent({ password: null, account_status: 'pending_registration' }),
-      );
-      mockRedis.ttl.mockResolvedValue(180);
-      const result = await service.checkUsername({ username: 'immosconi136' });
-      expect(result.status).toBe('no_password');
-      expect(result.cooldownSeconds).toBe(180);
-    });
-
-    it('debería lanzar NotFoundException si el usuario no existe', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(null);
-      await expect(service.checkUsername({ username: 'noexiste' }))
-        .rejects.toThrow(NotFoundException);
-    });
-
-    it('debería lanzar UnauthorizedException si la cuenta está suspendida', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(
-        makeStudent({ account_status: 'suspended' }),
-      );
-      await expect(service.checkUsername({ username: 'immosconi136' }))
-        .rejects.toThrow(UnauthorizedException);
-    });
-  });
-
-  // ── requestPasswordReset ────────────────────────────────────────────────────
-
-  describe('requestPasswordReset', () => {
-    it('debería delegar el envío al studentService', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      await service.requestPasswordReset({ username: 'immosconi136' });
-      expect(mockStudentService.sendPasswordResetEmail).toHaveBeenCalled();
-    });
-
-    it('debería tomar el cooldown (SET NX), enviar el mail y retornar cooldownSeconds: 300 por defecto', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      mockRedis.set.mockResolvedValue('OK');
-
-      const result = await service.requestPasswordReset({ username: 'immosconi136' });
+      const result = await call();
+      await flush();
 
       expect(result).toEqual({ cooldownSeconds: 300 });
-      expect(mockRedis.set).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid', '1', 'EX', 300, 'NX');
-      expect(mockStudentService.sendPasswordResetEmail).toHaveBeenCalled();
+      expect(mockRedis.set).toHaveBeenCalledWith('sso:access-mail-cooldown:immosconi136', '1', 'EX', 300, 'NX');
+      expect(mockStudentService.sendPasswordResetEmail).toHaveBeenCalledWith(expect.objectContaining({ id: 'student-uuid' }));
     });
 
-    it('debería lanzar HttpException 429 con retryAfter si el cooldown está activo, sin enviar el mail', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      mockRedis.set.mockResolvedValue(null); // NX falló: la clave ya existe
-      mockRedis.ttl.mockResolvedValue(180);
+    it('cuenta sin contraseña → mail de configuración (token "setup")', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ password: null, account_status: 'pending_registration' }));
 
-      let caughtError: unknown;
-      try {
-        await service.requestPasswordReset({ username: 'immosconi136' });
-      } catch (e) {
-        caughtError = e;
-      }
-      expect(caughtError).toBeInstanceOf(HttpException);
-      expect((caughtError as HttpException).getStatus()).toBe(429);
-      expect((caughtError as HttpException).getResponse()).toMatchObject({ retryAfter: 180 });
+      const result = await call();
+      await flush();
+
+      expect(result).toEqual({ cooldownSeconds: 300 });
+      expect(mockPasswordResetTokenService.generate).toHaveBeenCalledWith('student-uuid', 'setup');
+      expect(mockMailService.send).toHaveBeenCalledWith('alumno@gmail.com', expect.any(String), expect.anything());
       expect(mockStudentService.sendPasswordResetEmail).not.toHaveBeenCalled();
     });
 
-    it('debería liberar el cooldown si el envío del mail falla', async () => {
+    it.each([
+      ['no existe', null],
+      ['está suspendida', makeStudent({ account_status: 'suspended' })],
+    ])('si la cuenta %s responde IGUAL (200 + cooldown) y no envía nada', async (_n, student) => {
+      mockStudentService.findForAuth.mockResolvedValue(student);
+
+      const result = await call('cualquiera');
+      await flush();
+
+      expect(result).toEqual({ cooldownSeconds: 300 });
+      expect(mockRedis.set).toHaveBeenCalled();
+      expect(mockMailService.send).not.toHaveBeenCalled();
+      expect(mockStudentService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('el cooldown activo responde 429 con retryAfter, exista o no la cuenta', async () => {
+      mockRedis.set.mockResolvedValue(null);
+      mockRedis.ttl.mockResolvedValue(120);
+
+      const err = await call('noexiste').catch(e => e as HttpException);
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(429);
+      expect((err as HttpException).getResponse()).toEqual(expect.objectContaining({ retryAfter: 120 }));
+      expect(mockStudentService.findForAuth).not.toHaveBeenCalled();
+    });
+
+    it('N4: si el SMTP falla no tira ni deja una promesa sin capturar', async () => {
+      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ password: null, account_status: 'pending_registration' }));
+      mockMailService.send.mockRejectedValue(new Error('SMTP caído'));
+      const unhandled = jest.fn();
+      process.once('unhandledRejection', unhandled);
+
+      await expect(call()).resolves.toEqual({ cooldownSeconds: 300 });
+      await flush(); await flush();
+
+      expect(unhandled).not.toHaveBeenCalled();
+      process.removeListener('unhandledRejection', unhandled);
+    });
+  });
+
+  describe('configuración (PASSWORD_RESET_COOLDOWN_MS)', () => {
+    const build = (env: Record<string, string>) =>
+      new AuthService(
+        makeConfigService(env) as never, mockJwtService as never, mockCodeService as never,
+        mockOAuthClientService as never, mockRefreshTokenService as never, mockStudentService as never,
+        mockPasswordResetTokenService as never, mockMailService as never, mockRedis as never,
+        mockLoginAttempts as never,
+      );
+
+    it('toma la duración del entorno (ms → segundos, redondeando hacia arriba)', async () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      mockStudentService.sendPasswordResetEmail.mockRejectedValue(new Error('smtp caído'));
-
-      await expect(service.requestPasswordReset({ username: 'immosconi136' })).rejects.toThrow('smtp caído');
-      expect(mockRedis.del).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid');
+      const result = await build({ PASSWORD_RESET_COOLDOWN_MS: '60500' }).requestPasswordReset({ username: 'immosconi136' });
+      expect(result.cooldownSeconds).toBe(61);
+      expect(mockRedis.set).toHaveBeenCalledWith('sso:access-mail-cooldown:immosconi136', '1', 'EX', 61, 'NX');
     });
 
-    it('no debería tocar Redis si el usuario no existe, está suspendido o no tiene contraseña', async () => {
-      mockStudentService.findForAuth.mockResolvedValueOnce(null);
-      await expect(service.requestPasswordReset({ username: 'x' })).rejects.toThrow(NotFoundException);
-      mockStudentService.findForAuth.mockResolvedValueOnce(makeStudent({ account_status: 'suspended' }));
-      await expect(service.requestPasswordReset({ username: 'x' })).rejects.toThrow(UnauthorizedException);
-      mockStudentService.findForAuth.mockResolvedValueOnce(makeStudent({ password: null }));
-      await expect(service.requestPasswordReset({ username: 'x' })).rejects.toThrow(BadRequestException);
-      expect(mockRedis.set).not.toHaveBeenCalled();
-    });
-
-    describe('configuración (PASSWORD_RESET_COOLDOWN_MS)', () => {
-      const build = (env: Record<string, string>) =>
-        new AuthService(
-          makeConfigService(env) as never, mockJwtService as never, mockCodeService as never,
-          mockOAuthClientService as never, mockRefreshTokenService as never, mockStudentService as never,
-          mockPasswordResetTokenService as never, mockMailService as never, mockRedis as never,
-        );
-
-      it('debería tomar la duración del entorno (ms → segundos, redondeando hacia arriba)', async () => {
-        mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-        const custom = build({ PASSWORD_RESET_COOLDOWN_MS: '60500' });
-
-        const result = await custom.requestPasswordReset({ username: 'immosconi136' });
-
-        expect(result.cooldownSeconds).toBe(61);
-        expect(mockRedis.set).toHaveBeenCalledWith('sso:reset-cooldown:student-uuid', '1', 'EX', 61, 'NX');
-      });
-
-      it.each([['abc'], ['0'], ['-2'], ['2.5']])('debería fallar al arrancar si el valor es inválido (%s)', (bad) => {
-        expect(() => build({ PASSWORD_RESET_COOLDOWN_MS: bad })).toThrow('PASSWORD_RESET_COOLDOWN_MS');
-      });
-    });
-
-    it('debería lanzar NotFoundException si el usuario no existe', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(null);
-      await expect(service.requestPasswordReset({ username: 'noexiste' }))
-        .rejects.toThrow(NotFoundException);
-    });
-
-    it('debería lanzar UnauthorizedException si la cuenta está suspendida', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ account_status: 'suspended' }));
-      await expect(service.requestPasswordReset({ username: 'immosconi136' }))
-        .rejects.toThrow(UnauthorizedException);
-    });
-
-    it('debería lanzar BadRequestException si la cuenta no tiene contraseña (pending_registration)', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ password: null }));
-      await expect(service.requestPasswordReset({ username: 'immosconi136' }))
-        .rejects.toThrow(BadRequestException);
+    it.each([['abc'], ['0'], ['-2'], ['2.5']])('falla al arrancar si el valor es inválido (%s)', (bad) => {
+      expect(() => build({ PASSWORD_RESET_COOLDOWN_MS: bad })).toThrow('PASSWORD_RESET_COOLDOWN_MS');
     });
   });
 
   // ── validatePasswordResetToken ──────────────────────────────────────────────
 
   describe('validatePasswordResetToken', () => {
-    it('debería completar sin error si el token y la cuenta son válidos', async () => {
-      mockPasswordResetTokenService.validate.mockResolvedValue({
-        studentId: 'student-uuid',
-        purpose: 'reset',
-      });
-      mockStudentService.findOne.mockResolvedValue({ account_status: 'active' });
-
-      await expect(service.validatePasswordResetToken({ token: 'valid-token' }))
-        .resolves.toBeUndefined();
+    it('completa sin error si el token y la cuenta son válidos', async () => {
+      mockPasswordResetTokenService.validate.mockResolvedValue({ studentId: 'student-uuid', purpose: 'reset' });
+      mockStudentService.findOne.mockResolvedValue(makeStudentDto());
+      await expect(service.validatePasswordResetToken({ token: 'tok' })).resolves.toBeUndefined();
     });
 
-    it('debería lanzar UnauthorizedException si la cuenta está suspendida', async () => {
-      mockPasswordResetTokenService.validate.mockResolvedValue({
-        studentId: 'student-uuid',
-        purpose: 'reset',
-      });
-      mockStudentService.findOne.mockResolvedValue({ account_status: 'suspended' });
-
-      await expect(service.validatePasswordResetToken({ token: 'valid-token' }))
-        .rejects.toThrow(UnauthorizedException);
+    it('lanza UnauthorizedException si la cuenta está suspendida', async () => {
+      mockPasswordResetTokenService.validate.mockResolvedValue({ studentId: 'student-uuid', purpose: 'reset' });
+      mockStudentService.findOne.mockResolvedValue(makeStudentDto({ account_status: 'suspended' }));
+      await expect(service.validatePasswordResetToken({ token: 'tok' })).rejects.toThrow(UnauthorizedException);
     });
   });
 
-  // ── setPassword ─────────────────────────────────────────────────────────────
+  // ── setPassword (N11 / X7) ──────────────────────────────────────────────────
 
   describe('setPassword', () => {
-    it('debería lanzar BadRequestException si las contraseñas no coinciden', async () => {
-      await expect(
-        service.setPassword({ token: 'tok', password: 'nueva1234', confirmPassword: 'distinta' }),
-      ).rejects.toThrow(BadRequestException);
+    const dto = { token: 'valid-token', password: 'nueva1234', confirmPassword: 'nueva1234' };
+
+    it('lanza BadRequestException si las contraseñas no coinciden', async () => {
+      await expect(service.setPassword({ ...dto, confirmPassword: 'distinta' })).rejects.toThrow(BadRequestException);
     });
 
-    it('debería establecer la contraseña si el token es válido y las contraseñas coinciden', async () => {
-      mockPasswordResetTokenService.consume.mockResolvedValue({
-        studentId: 'student-uuid',
-        purpose: 'setup',
-      });
+    it('X7: rechaza contraseñas de más de 72 bytes (bcrypt las truncaría en silencio)', async () => {
+      const long = 'ñ'.repeat(37); // 74 bytes en UTF-8, 37 caracteres
+      await expect(service.setPassword({ ...dto, password: long, confirmPassword: long })).rejects.toThrow('72');
+      expect(mockPasswordResetTokenService.consume).not.toHaveBeenCalled();
+    });
 
-      await service.setPassword({ token: 'valid-token', password: 'nueva1234', confirmPassword: 'nueva1234' });
+    it('establece la contraseña: valida, consume el token y delega en studentService (que revoca sesiones)', async () => {
+      mockPasswordResetTokenService.validate.mockResolvedValue({ studentId: 'student-uuid', purpose: 'setup' });
+      mockStudentService.findOne.mockResolvedValue(makeStudentDto());
+      mockPasswordResetTokenService.consume.mockResolvedValue({ studentId: 'student-uuid', purpose: 'setup' });
+
+      await service.setPassword(dto);
 
       expect(mockPasswordResetTokenService.consume).toHaveBeenCalledWith('valid-token');
       expect(mockStudentService.setPassword).toHaveBeenCalledWith('student-uuid', '$2b$10$hashed');
+    });
+
+    it('N11: si la cuenta está suspendida NO quema el link', async () => {
+      mockPasswordResetTokenService.validate.mockResolvedValue({ studentId: 'student-uuid', purpose: 'reset' });
+      mockStudentService.findOne.mockResolvedValue(makeStudentDto({ account_status: 'suspended' }));
+
+      await expect(service.setPassword(dto)).rejects.toThrow(UnauthorizedException);
+      expect(mockPasswordResetTokenService.consume).not.toHaveBeenCalled();
+      expect(mockStudentService.setPassword).not.toHaveBeenCalled();
     });
   });
 
   // ── issueCode ───────────────────────────────────────────────────────────────
 
   describe('issueCode', () => {
-    it('debería retornar code y state si todo es válido', async () => {
-      mockOAuthClientService.findOne.mockResolvedValue({
-        id: 1,
-        isActive: true,
-        redirectUris: ['https://app.com/callback'],
-      });
+    const client = { id: 1, isActive: true, redirectUris: ['https://app.com/callback'] };
+
+    it('retorna code y state, y ata el code a la redirect_uri (P8)', async () => {
+      mockOAuthClientService.findOne.mockResolvedValue(client);
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       const result = await service.issueCode(loginDto);
-      expect(result.code).toBe('generated-code');
-      expect(result.state).toBe('random-state');
+
+      expect(result).toEqual({ code: 'generated-code', state: 'random-state' });
+      expect(mockCodeService.generate).toHaveBeenCalledWith(userInfo, 1, 'https://app.com/callback');
     });
 
-    it('debería lanzar UnauthorizedException si el client_id es inválido', async () => {
-      mockOAuthClientService.findOne.mockRejectedValue(new Error('not found'));
-      await expect(service.issueCode(loginDto as never)).rejects.toThrow(UnauthorizedException);
+    it('lanza UnauthorizedException si el client_id es inválido', async () => {
+      mockOAuthClientService.findOne.mockRejectedValue(new Error('no existe'));
+      await expect(service.issueCode(loginDto)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('debería lanzar UnauthorizedException si la aplicación está suspendida', async () => {
-      mockOAuthClientService.findOne.mockResolvedValue({
-        id: 1,
-        isActive: false,
-        redirectUris: ['https://app.com/callback'],
-      });
-      await expect(service.issueCode(loginDto as never)).rejects.toThrow(UnauthorizedException);
+    it('lanza UnauthorizedException si la aplicación está suspendida', async () => {
+      mockOAuthClientService.findOne.mockResolvedValue({ ...client, isActive: false });
+      await expect(service.issueCode(loginDto)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('debería lanzar UnauthorizedException si redirect_uri no está registrado', async () => {
-      mockOAuthClientService.findOne.mockResolvedValue({
-        id: 1,
-        isActive: true,
-        redirectUris: ['https://otro.com/callback'],
-      });
-      await expect(service.issueCode(loginDto as never)).rejects.toThrow(UnauthorizedException);
+    it('lanza UnauthorizedException si redirect_uri no está registrada, sin probar la contraseña', async () => {
+      mockOAuthClientService.findOne.mockResolvedValue({ ...client, redirectUris: ['https://otra.com/cb'] });
+      await expect(service.issueCode(loginDto)).rejects.toThrow(UnauthorizedException);
+      expect(mockStudentService.findForAuth).not.toHaveBeenCalled();
     });
   });
 
-  // ── exchangeCodeForTokens ───────────────────────────────────────────────────
+  // ── exchangeCodeForTokens (P7 / P8) ─────────────────────────────────────────
 
   describe('exchangeCodeForTokens', () => {
-    const tokenDto = {
-      client_id: '1',
-      client_secret: 'plain-secret',
-      code: 'valid-code',
-      redirect_uri: 'https://app.com/callback',
-    };
+    const dto = { client_id: '1', client_secret: 'secret', code: 'code', redirect_uri: 'https://app.com/callback' };
+    const entry = { userInfo, clientId: 1, redirectUri: 'https://app.com/callback' };
 
-    it('debería retornar access y refresh token si el code es válido', async () => {
+    it('retorna access y refresh token firmados con HS256, iss y aud=client_id (P7)', async () => {
       mockOAuthClientService.validateClient.mockResolvedValue(true);
-      mockCodeService.consume.mockReturnValue({ userInfo, clientId: 1 });
-      mockRefreshTokenService.save.mockResolvedValue(undefined);
+      mockCodeService.consume.mockResolvedValue(entry);
 
-      const result = await service.exchangeCodeForTokens(tokenDto);
-      expect(result.access_token).toBe('signed-jwt');
-      expect(result.refresh_token).toBe('signed-jwt');
-      expect(result.token_type).toBe('Bearer');
+      const result = await service.exchangeCodeForTokens(dto);
+
+      expect(result).toEqual(expect.objectContaining({ access_token: 'signed-jwt', refresh_token: 'signed-jwt', token_type: 'Bearer' }));
+      expect(mockJwtService.signAsync).toHaveBeenCalledTimes(2);
+      for (const call of (mockJwtService.signAsync as jest.Mock).mock.calls) {
+        expect(call[1]).toEqual(expect.objectContaining({
+          algorithm: 'HS256',
+          issuer: 'https://sso.itapu.test',   // sin la barra final
+          audience: '1',
+        }));
+      }
+      expect(mockRefreshTokenService.save).toHaveBeenCalledWith(expect.objectContaining({ clientId: 1, sub: 'student-uuid' }));
     });
 
-    it('debería lanzar UnauthorizedException si las credenciales del cliente son inválidas', async () => {
+    it('lanza UnauthorizedException si las credenciales del cliente son inválidas', async () => {
       mockOAuthClientService.validateClient.mockResolvedValue(false);
-      await expect(service.exchangeCodeForTokens(tokenDto as never))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(service.exchangeCodeForTokens(dto)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('debería lanzar UnauthorizedException si el code es inválido o expiró', async () => {
+    it('lanza UnauthorizedException si el code es inválido o expiró', async () => {
       mockOAuthClientService.validateClient.mockResolvedValue(true);
-      mockCodeService.consume.mockReturnValue(null);
-      await expect(service.exchangeCodeForTokens(tokenDto as never))
-        .rejects.toThrow(UnauthorizedException);
+      mockCodeService.consume.mockResolvedValue(null);
+      await expect(service.exchangeCodeForTokens(dto)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('debería lanzar UnauthorizedException si el code no pertenece al cliente', async () => {
+    it('lanza UnauthorizedException si el code no pertenece al cliente', async () => {
       mockOAuthClientService.validateClient.mockResolvedValue(true);
-      mockCodeService.consume.mockReturnValue({ userInfo, clientId: 99 });
-      await expect(service.exchangeCodeForTokens(tokenDto as never))
-        .rejects.toThrow(UnauthorizedException);
+      mockCodeService.consume.mockResolvedValue({ ...entry, clientId: 99 });
+      await expect(service.exchangeCodeForTokens(dto)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('P8: lanza UnauthorizedException si la redirect_uri del canje no es la de emisión del code', async () => {
+      // Ambas están registradas para el cliente, pero el code se emitió para otra.
+      mockOAuthClientService.validateClient.mockResolvedValue(true);
+      mockCodeService.consume.mockResolvedValue({ ...entry, redirectUri: 'https://app.com/otra' });
+
+      await expect(service.exchangeCodeForTokens(dto)).rejects.toThrow('redirect_uri');
+      expect(mockJwtService.signAsync).not.toHaveBeenCalled();
     });
   });
 
-  // ── refreshTokens ───────────────────────────────────────────────────────────
+  // ── refreshTokens (P3 / P4) ─────────────────────────────────────────────────
 
   describe('refreshTokens', () => {
-    const refreshPayload = {
-      sub: 'student-uuid',
-      nombre: 'Ignacio',
-      apellido: 'Mosconi',
-      username: 'immosconi136',
-      especialidad: 'Mecánica',
-      email: 'alumno@gmail.com',
-      cargo: 'Alumno',
-      type: 'refresh',
-      jti: 'some-jti',
-    };
+    const dto = { refresh_token: 'valid-refresh', client_id: '1', client_secret: 'secret' };
+    const refreshPayload = { ...userInfo, type: 'refresh', jti: 'some-jti', aud: '1' };
+    const record = { sub: 'student-uuid', familyId: 'family-uuid', sessionExpiresAt: null, clientId: 1 };
 
-    it('debería retornar nuevos tokens con refresh token válido', async () => {
+    beforeEach(() => {
       mockJwtService.verifyAsync = jest.fn().mockResolvedValue(refreshPayload);
-      mockRefreshTokenService.consume.mockResolvedValue({
-        sub: 'student-uuid',
-        familyId: 'family-uuid',
-        sessionExpiresAt: null,
-        clientId: 1,
-      });
-
-      const result = await service.refreshTokens({ refresh_token: 'valid-refresh' });
-      expect(result.access_token).toBe('signed-jwt');
-      expect(result.refresh_token).toBe('signed-jwt');
-      expect(result.token_type).toBe('Bearer');
+      mockRefreshTokenService.consume.mockResolvedValue(record);
+      mockStudentService.findOne.mockResolvedValue(makeStudentDto());
     });
 
-    it('debería lanzar UnauthorizedException si el token expiró', async () => {
+    it('retorna nuevos tokens (con iss/aud) con un refresh token válido', async () => {
+      const result = await service.refreshTokens(dto);
+
+      expect(result).toEqual(expect.objectContaining({ access_token: 'signed-jwt', refresh_token: 'signed-jwt', token_type: 'Bearer' }));
+      expect((mockJwtService.signAsync as jest.Mock).mock.calls[0][1]).toEqual(
+        expect.objectContaining({ algorithm: 'HS256', issuer: 'https://sso.itapu.test', audience: '1' }),
+      );
+      expect(mockRefreshTokenService.save).toHaveBeenCalledWith(expect.objectContaining({ familyId: 'family-uuid', clientId: 1 }));
+    });
+
+    it('P4: client_id/client_secret inválidos → 401 sin tocar el token', async () => {
+      mockOAuthClientService.authenticateClient.mockResolvedValue(false);
+      await expect(service.refreshTokens(dto)).rejects.toThrow(UnauthorizedException);
+      expect(mockRefreshTokenService.consume).not.toHaveBeenCalled();
+    });
+
+    it('P4: un refresh token emitido para otra app (aud distinto) se rechaza sin consumirlo', async () => {
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({ ...refreshPayload, aud: '2' });
+      await expect(service.refreshTokens(dto)).rejects.toThrow(UnauthorizedException);
+      expect(mockRefreshTokenService.consume).not.toHaveBeenCalled();
+    });
+
+    it('P4: si el registro en la base es de otra app, revoca la familia y rechaza', async () => {
+      mockJwtService.verifyAsync = jest.fn().mockResolvedValue({ ...refreshPayload, aud: undefined }); // token viejo sin aud
+      mockRefreshTokenService.consume.mockResolvedValue({ ...record, clientId: 2 });
+
+      await expect(service.refreshTokens(dto)).rejects.toThrow(UnauthorizedException);
+      expect(mockRefreshTokenService.revokeFamily).toHaveBeenCalledWith('valid-refresh');
+    });
+
+    it('P3: usa los datos ACTUALES del alumno, no los que traía el token viejo', async () => {
+      mockStudentService.findOne.mockResolvedValue(makeStudentDto({ domainRole: { id: 2, name: 'Profesor' } }));
+
+      await service.refreshTokens(dto);
+
+      const payload = (mockJwtService.signAsync as jest.Mock).mock.calls[0][0];
+      expect(payload.cargo).toBe('Profesor');
+    });
+
+    it.each([
+      ['suspendido', makeStudentDto({ account_status: 'suspended' })],
+      ['eliminado', null],
+    ])('P3: si el alumno está %s revoca la sesión y responde 401', async (_n, student) => {
+      if (student) mockStudentService.findOne.mockResolvedValue(student);
+      else mockStudentService.findOne.mockRejectedValue(new Error('no existe'));
+
+      await expect(service.refreshTokens(dto)).rejects.toThrow(UnauthorizedException);
+      expect(mockRefreshTokenService.revokeFamily).toHaveBeenCalledWith('valid-refresh');
+      expect(mockRefreshTokenService.save).not.toHaveBeenCalled();
+    });
+
+    it('lanza UnauthorizedException si el token expiró', async () => {
       mockJwtService.verifyAsync = jest.fn().mockRejectedValue({ name: 'TokenExpiredError' });
-      await expect(service.refreshTokens({ refresh_token: 'expired' }))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens(dto)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('debería lanzar UnauthorizedException si el token es inválido', async () => {
+    it('lanza UnauthorizedException si el token es inválido', async () => {
       mockJwtService.verifyAsync = jest.fn().mockRejectedValue(new Error('invalid signature'));
-      await expect(service.refreshTokens({ refresh_token: 'bad-token' }))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens(dto)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('debería lanzar UnauthorizedException si el token no es de tipo refresh', async () => {
+    it('lanza UnauthorizedException si el token no es de tipo refresh', async () => {
       mockJwtService.verifyAsync = jest.fn().mockResolvedValue({ ...refreshPayload, type: 'access' });
-      await expect(service.refreshTokens({ refresh_token: 'access-token' }))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(service.refreshTokens(dto)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('debería respetar el límite absoluto de sesión al renovar', async () => {
-      // sessionExpiresAt en el pasado cercano pero futuro justo → newRefreshExpiresInSeconds mínimo
-      const sessionExpiresAt = new Date(Date.now() + 30_000); // 30 segundos desde ahora
-      mockJwtService.verifyAsync = jest.fn().mockResolvedValue(refreshPayload);
-      mockRefreshTokenService.consume.mockResolvedValue({
-        sub: 'student-uuid',
-        familyId: 'family-uuid',
-        sessionExpiresAt,
-        clientId: 1,
-      });
+    it('respeta el límite absoluto de sesión al renovar', async () => {
+      mockRefreshTokenService.consume.mockResolvedValue({ ...record, sessionExpiresAt: new Date(Date.now() + 30_000) });
 
-      const result = await service.refreshTokens({ refresh_token: 'valid-refresh' });
-      expect(result.access_token).toBeDefined();
-      expect(mockRefreshTokenService.save).toHaveBeenCalled();
+      await service.refreshTokens(dto);
+
+      const saved = mockRefreshTokenService.save.mock.calls[0][0] as { expiresIn: string };
+      expect(parseInt(saved.expiresIn, 10)).toBeLessThanOrEqual(30);
     });
   });
 
-  // ── logout ──────────────────────────────────────────────────────────────────
+  // ── logout (P4) ─────────────────────────────────────────────────────────────
 
   describe('logout', () => {
-    it('debería revocar la familia del refresh token', async () => {
-      await service.logout({ refresh_token: 'some-token' });
-      expect(mockRefreshTokenService.revokeFamily).toHaveBeenCalledWith('some-token');
-    });
-  });
+    const dto = { refresh_token: 'rt', client_id: '3', client_secret: 'secret' };
 
-  // ── resendSetupEmail ────────────────────────────────────────────────────────
-  describe('resendSetupEmail', () => {
-    it('debería enviar el mail y retornar cooldownSeconds: 300 si no hay cooldown activo', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(
-        makeStudent({ password: null, account_status: 'pending_registration' }),
-      );
-      mockRedis.ttl.mockResolvedValue(-2);
-
-      const result = await service.resendSetupEmail({ username: 'immosconi136' });
-
-      expect(result.cooldownSeconds).toBe(300);
-      expect(mockPasswordResetTokenService.generate).toHaveBeenCalledWith('student-uuid', 'setup');
-      expect(mockMailService.send).toHaveBeenCalled();
-      expect(mockRedis.set).toHaveBeenCalledWith('sso:setup-cooldown:student-uuid', '1', 'EX', 300);
+    it('revoca la familia del refresh token solo para la app autenticada', async () => {
+      await service.logout(dto);
+      expect(mockRefreshTokenService.revokeFamily).toHaveBeenCalledWith('rt', 3);
     });
 
-    it('debería usar PASSWORD_RESET_COOLDOWN_MS como duración del cooldown de setup', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(
-        makeStudent({ password: null, account_status: 'pending_registration' }),
-      );
-      mockRedis.ttl.mockResolvedValue(-2);
-      const custom = new AuthService(
-        makeConfigService({ PASSWORD_RESET_COOLDOWN_MS: '60500' }) as never, mockJwtService as never,
-        mockCodeService as never, mockOAuthClientService as never, mockRefreshTokenService as never,
-        mockStudentService as never, mockPasswordResetTokenService as never, mockMailService as never,
-        mockRedis as never,
-      );
-
-      const result = await custom.resendSetupEmail({ username: 'immosconi136' });
-
-      expect(result.cooldownSeconds).toBe(61);
-      expect(mockRedis.set).toHaveBeenCalledWith('sso:setup-cooldown:student-uuid', '1', 'EX', 61);
-    });
-
-    it('debería lanzar HttpException 429 con retryAfter si el cooldown está activo', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(
-        makeStudent({ password: null, account_status: 'pending_registration' }),
-      );
-      mockRedis.ttl.mockResolvedValue(180);
-
-      let caughtError: unknown;
-      try {
-        await service.resendSetupEmail({ username: 'immosconi136' });
-      } catch (e) {
-        caughtError = e;
-      }
-      expect(caughtError).toBeInstanceOf(HttpException);
-      expect((caughtError as HttpException).getStatus()).toBe(429);
-      expect((caughtError as HttpException).getResponse()).toMatchObject({ retryAfter: 180 });
-    });
-
-    it('debería lanzar NotFoundException si el usuario no existe', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(null);
-      await expect(service.resendSetupEmail({ username: 'noexiste' }))
-        .rejects.toThrow(NotFoundException);
-    });
-
-    it('debería lanzar UnauthorizedException si la cuenta está suspendida', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent({ account_status: 'suspended' }));
-      await expect(service.resendSetupEmail({ username: 'immosconi136' }))
-        .rejects.toThrow(UnauthorizedException);
-    });
-
-    it('debería lanzar BadRequestException si la cuenta ya tiene contraseña configurada', async () => {
-      mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      await expect(service.resendSetupEmail({ username: 'immosconi136' }))
-        .rejects.toThrow(BadRequestException);
+    it('con credenciales de app inválidas responde 401 y no revoca nada', async () => {
+      mockOAuthClientService.authenticateClient.mockResolvedValue(false);
+      await expect(service.logout(dto)).rejects.toThrow(UnauthorizedException);
+      expect(mockRefreshTokenService.revokeFamily).not.toHaveBeenCalled();
     });
   });
 
   // ── getCleanUserInfo ────────────────────────────────────────────────────────
 
   describe('getCleanUserInfo', () => {
-    it('debería retornar solo los campos públicos del payload', () => {
-      const payload = {
-        ...userInfo,
-        type: 'access',
-        iat: 1234567890,
-        exp: 1234568790,
-      } as JwtPayloadDto;
-
+    it('retorna solo los campos públicos del payload', () => {
+      const payload = { ...userInfo, type: 'access', iat: 1, exp: 2, iss: 'x', aud: '1' } as JwtPayloadDto;
       const result = service.getCleanUserInfo(payload);
-
       expect(result).toEqual(userInfo);
-      expect(result).not.toHaveProperty('type');
-      expect(result).not.toHaveProperty('iat');
-      expect(result).not.toHaveProperty('exp');
+      for (const k of ['type', 'iat', 'exp', 'iss', 'aud']) expect(result).not.toHaveProperty(k);
     });
   });
 });

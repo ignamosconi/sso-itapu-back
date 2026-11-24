@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { StudentEntity } from '../../student/entities/student.entity.js';
+import { StudentEntity } from '../../student/students/entities/student.entity.js';
 
 @Entity('oauth_clients')
 export class OAuthClientEntity {

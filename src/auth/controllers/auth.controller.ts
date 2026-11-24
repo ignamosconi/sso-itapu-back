@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Res, Inject, UseGuards, HttpCode } from '@nestjs/common';
+import { Controller, Post, Get, Body, Res, Inject, UseGuards, HttpCode, HttpException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { join } from 'path';
@@ -11,12 +11,10 @@ import { LogoutRequestDto } from '../dtos/logout-request.dto.js';
 import { CodeResponseDto } from '../dtos/code-response.dto.js';
 import { TokenResponseDto } from '../dtos/token-response.dto.js';
 import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
-import { JwtGuard } from '../guards/jwt.guard.js';
-import { CurrentUser } from '../decorators/current-user.decorator.js';
+import { JwtGuard } from '../../common/guards/jwt.guard.js';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
 import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { CheckUsernameRequestDto } from '../dtos/check-username-request.dto.js';
-import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js';
 import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
 import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
 import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
@@ -43,10 +41,21 @@ export class AuthController implements IAuthController {
   @ApiResponse({ status: 201, type: CodeResponseDto })
   @ApiResponse({ status: 401, description: 'Credenciales inválidas o client_id/redirect_uri incorrectos' })
   @ApiResponse({ status: 400, description: 'Body malformado' })
-  @Throttle({ default: { ttl: 60000, limit: 5 } })  // 5 intentos por minuto por IP
+  @ApiResponse({ status: 429, description: 'Demasiados intentos fallidos para esa cuenta (incluye cabecera Retry-After)' })
+  // Por IP el límite es holgado (varios alumnos pueden compartir la IP del instituto);
+  // la protección fuerte contra fuerza bruta es el bloqueo por cuenta (LOGIN_MAX_ATTEMPTS).
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   @Post('login')
-  async login(@Body() loginDto: LoginRequestDto): Promise<CodeResponseDto> {
-    return this.authService.issueCode(loginDto);
+  async login(@Body() loginDto: LoginRequestDto, @Res({ passthrough: true }) res: Response): Promise<CodeResponseDto> {
+    try {
+      return await this.authService.issueCode(loginDto);
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === 429) {
+        const body = err.getResponse() as { retryAfterSeconds?: number };
+        if (body.retryAfterSeconds) res.setHeader('Retry-After', String(body.retryAfterSeconds));
+      }
+      throw err;
+    }
   }
 
   @ApiOperation({
@@ -55,18 +64,23 @@ export class AuthController implements IAuthController {
   })
   @ApiResponse({ status: 201, type: TokenResponseDto })
   @ApiResponse({ status: 401, description: 'Code inválido, expirado, o credenciales de cliente incorrectas' })
-  @Throttle({ default: { ttl: 60000, limit: 10 } })  // 10 canjes por minuto por IP
+  // El límite se cuenta por (client_id + IP) y no solo por IP: ver AppThrottlerGuard.
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post('token')
   async token(@Body() dto: AuthorizationCodeRequestDto): Promise<TokenResponseDto> {
     return this.authService.exchangeCodeForTokens(dto);
   }
 
   @ApiOperation({
-    summary: 'Renovar access token',
-    description: 'Recibe un refresh token válido y devuelve un nuevo access token. El refresh token no cambia.',
+    summary: 'Renovar la sesión (rotación de refresh token)',
+    description:
+      'Endpoint server-to-server. Requiere client_id + client_secret de la app dueña de la sesión y un refresh token válido. ' +
+      'Devuelve un nuevo access_token y un nuevo refresh_token (el anterior queda inutilizable). ' +
+      'Vuelve a leer al alumno: si está suspendido o fue eliminado, la sesión se revoca y responde 401.',
   })
   @ApiResponse({ status: 201, type: TokenResponseDto })
-  @ApiResponse({ status: 401, description: 'Refresh token inválido o expirado' })
+  @ApiResponse({ status: 401, description: 'Credenciales de la app o refresh token inválidos, expirados o de otra app' })
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @Post('refresh')
   async refresh(@Body() refreshRequestDto: RefreshRequestDto): Promise<TokenResponseDto> {
     return this.authService.refreshTokens(refreshRequestDto);
@@ -74,9 +88,11 @@ export class AuthController implements IAuthController {
 
   @ApiOperation({
     summary: 'Cerrar sesión de alumno',
-    description: 'Revoca el refresh token y toda su familia. El access token expira naturalmente (máx. 15m).',
+    description: 'Endpoint server-to-server. Requiere client_id + client_secret. Revoca el refresh token y toda su familia (solo si pertenece a esa app). El access token expira naturalmente (máx. 15m).',
   })
   @ApiResponse({ status: 204, description: 'Sesión cerrada correctamente' })
+  @ApiResponse({ status: 401, description: 'client_id o client_secret inválidos' })
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @HttpCode(204)
   @Post('logout')
   async logout(@Body() dto: LogoutRequestDto): Promise<void> {
@@ -92,24 +108,8 @@ export class AuthController implements IAuthController {
   @ApiBearerAuth('alumno-jwt')
   @UseGuards(JwtGuard)
   @Get('me')
-  me(@CurrentUser() user: JwtPayloadDto): UserInfoOauthDto {
-    return this.authService.getCleanUserInfo(user);
-  }
-
-  @ApiOperation({
-    summary: 'Verificar si un usuario tiene contraseña configurada',
-    description:
-      'Si el usuario no tiene contraseña (pending_registration), envía automáticamente ' +
-      'un email de setup y devuelve el email censurado. No revela si el usuario existe o no ' +
-      'con el mismo mensaje en caso de suspensión.',
-  })
-  @ApiResponse({ status: 200, type: CheckUsernameResponseDto })
-  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
-  @ApiResponse({ status: 401, description: 'Cuenta suspendida' })
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
-  @Post('check-username')
-  async checkUsername(@Body() dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto> {
-    return this.authService.checkUsername(dto);
+  me(@CurrentUser() user: JwtPayloadDto): UserInfoOauthDto & { aud: string } {
+    return { ...this.authService.getCleanUserInfo(user), aud: user.aud };
   }
 
   @ApiOperation({
@@ -128,11 +128,13 @@ export class AuthController implements IAuthController {
   }
 
   @ApiOperation({
-    summary: 'Solicitar email de recuperación de contraseña',
-    description: 'Envía un link de un solo uso (24hs) al email registrado del usuario. Tiene un cooldown por cuenta (PASSWORD_RESET_COOLDOWN_MS).',
+    summary: 'Pedir el correo para configurar u olvidé mi contraseña',
+    description:
+      'Respuesta uniforme: devuelve 200 + cooldownSeconds exista o no el usuario, para no revelar qué cuentas existen. ' +
+      'Si la cuenta existe y no está suspendida se envía un link de un solo uso (24hs): de configuración si todavía no tiene contraseña, ' +
+      'de restauración si ya la tiene. El cooldown (PASSWORD_RESET_COOLDOWN_MS) se aplica por nombre de usuario.',
   })
-  @ApiResponse({ status: 200, description: 'Email enviado. Devuelve cooldownSeconds.' })
-  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 200, description: 'Solicitud recibida. Devuelve cooldownSeconds.' })
   @ApiResponse({ status: 429, description: 'Cooldown activo, incluye retryAfter en segundos' })
   @Throttle({ default: { ttl: 900000, limit: 3 } })
   @HttpCode(200)
@@ -156,10 +158,9 @@ export class AuthController implements IAuthController {
 
   @ApiOperation({
     summary: 'Reenviar correo de configuración de contraseña',
-    description: 'Reenvía el email de setup para cuentas sin contraseña. Tiene un cooldown global de 5 minutos por cuenta.',
+    description: 'Mantenido por compatibilidad: se comporta igual que request-password-reset (respuesta uniforme y mismo cooldown).',
   })
-  @ApiResponse({ status: 200, description: 'Email reenviado. Devuelve cooldownSeconds.' })
-  @ApiResponse({ status: 404, description: 'Usuario no encontrado' })
+  @ApiResponse({ status: 200, description: 'Solicitud recibida. Devuelve cooldownSeconds.' })
   @ApiResponse({ status: 429, description: 'Cooldown activo, incluye retryAfter en segundos' })
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('resend-setup-email')

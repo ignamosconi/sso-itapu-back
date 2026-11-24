@@ -5,7 +5,7 @@
   const state = params.get('state') || '';
   let currentUsername = '';
   let resendInterval = null;
-  let emailMode = 'setup';        // 'setup' (cuenta sin contraseña) | 'reset' (olvidé mi contraseña)
+  let emailMode = 'reset';        // un único flujo de correo: configurar u olvidé mi contraseña
   let resetCooldownEndsAt = 0;    // timestamp (ms) en el que termina el cooldown de reset de currentUsername
 
   // ── Helpers de UI ────────────────────────────────────────────────────────
@@ -79,6 +79,10 @@
           document.getElementById('loginSub').textContent =
             `Ingresá a ${data.clientName} con tu usuario.`;
         }
+        // Mostramos el origen REAL al que va a volver el código, para que el alumno detecte un link de phishing.
+        try {
+          document.getElementById('redirectNote').textContent = `Vas a volver a: ${new URL(redirectUri).origin}`;
+        } catch { /* la redirect_uri ya fue validada por el servidor */ }
         showScreen('screen-username');
       })
       .catch(() => blockLogin('Error de red. Intentá de nuevo.'));
@@ -88,47 +92,18 @@
     if (e.persisted) { document.body.style.display = 'none'; window.location.reload(); }
   });
 
-  // ── Paso 1: check username ────────────────────────────────────────────────
+  // ── Paso 1: usuario ───────────────────────────────────────────────────────
+  // Ya no se consulta al servidor en este paso: así la pantalla no revela si el usuario existe,
+  // está suspendido o pendiente. Todo se resuelve recién con usuario + contraseña (o con el correo de acceso).
 
-  document.getElementById('btnContinue').addEventListener('click', async () => {
-    const btn = document.getElementById('btnContinue');
+  document.getElementById('btnContinue').addEventListener('click', () => {
     const username = document.getElementById('usernameInput').value.trim();
     if (!username) { showError('Ingresá tu nombre de usuario.'); return; }
-
-    hideError();
-    setLoading(btn, true);
-    try {
-      const res = await fetch(
-        `${window.location.pathname.replace('/login', '')}/check-username`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username }),
-        },
-      );
-      const data = await res.json();
-
-      if (!res.ok) {
-        showError(data.message || 'Error al verificar el usuario.');
-        return;
-      }
-
-      currentUsername = username;
-
-      if (data.status === 'has_password') {
-        resetCooldownEndsAt = Date.now() + (data.resetCooldownSeconds ?? 0) * 1000;
-        document.getElementById('passwordInput').value = '';
-        showScreen('screen-password');
-        document.getElementById('passwordInput').focus();
-      } else {
-        document.getElementById('maskedEmail').textContent = data.maskedEmail;
-        openEmailScreen('setup', data.cooldownSeconds ?? 0);
-      }
-    } catch {
-      showError('Error de red. Intentá de nuevo.');
-    } finally {
-      setLoading(btn, false);
-    }
+    if (username !== currentUsername) resetCooldownEndsAt = 0; // el cooldown del correo es por usuario
+    currentUsername = username;
+    document.getElementById('passwordInput').value = '';
+    showScreen('screen-password');
+    document.getElementById('passwordInput').focus();
   });
 
   document.getElementById('usernameInput').addEventListener('keydown', e => {
@@ -153,7 +128,15 @@
       });
       const data = await res.json();
 
-      if (!res.ok) { showError(data.message || 'Credenciales inválidas.'); return; }
+      if (res.status === 429) {
+        const secs = Number(res.headers.get('Retry-After')) || data.retryAfterSeconds || 0;
+        const mins = secs > 0 ? Math.ceil(secs / 60) : 0;
+        showError(mins
+          ? `Demasiados intentos. Probá de nuevo en ${mins} minuto${mins === 1 ? '' : 's'}.`
+          : 'Demasiados intentos. Esperá unos minutos antes de volver a intentar.');
+        return;
+      }
+      if (!res.ok) { showError(Array.isArray(data.message) ? data.message[0] : (data.message || 'Usuario o contraseña incorrectos.')); return; }
 
       showSuccessAndClose(data.code, data.state);
     } catch {
@@ -180,8 +163,6 @@
     btn.style.opacity = '1';
     btn.textContent = 'Enviar correo';
     document.getElementById('resendCountdown').style.display = 'none';
-    document.getElementById('emailTextSetup').style.display = mode === 'setup' ? '' : 'none';
-    document.getElementById('emailTextReset').style.display = mode === 'reset' ? '' : 'none';
 
     showScreen('screen-check-email');
     if (cooldownSeconds > 0) {
@@ -231,7 +212,8 @@
     hideError();
     setLoading(btn, true);
     try {
-      const endpoint = emailMode === 'reset' ? '/request-password-reset' : '/resend-setup-email';
+      // Un solo endpoint para "es mi primera vez" y "olvidé mi contraseña": responde igual exista o no el usuario.
+      const endpoint = '/request-password-reset';
       const route = window.location.pathname.replace('/login', endpoint);
       const res = await fetch(route, {
         method: 'POST',
@@ -276,7 +258,7 @@
   });
 
   document.getElementById('btnBackFromEmail').addEventListener('click', () => {
-    showScreen(emailMode === 'reset' ? 'screen-password' : 'screen-username');
+    showScreen('screen-password');
   });
 
   // ── Success ───────────────────────────────────────────────────────────────

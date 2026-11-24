@@ -7,8 +7,8 @@ import { CreateAdminDto } from '../dtos/create-admin.dto.js';
 import { DeleteSelfAdminDto } from '../dtos/delete-self-admin.dto.js';
 import { UpdateAdminDto } from '../dtos/update-admin.dto.js';
 import { AdminResponseDto } from '../dtos/admin-response.dto.js';
-import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
-import { SkipThrottle } from '@nestjs/throttler';
+import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard.js';
+import { AdminThrottle } from '../../common/decorators/admin-throttle.decorator.js';
 
 interface RequestWithAdmin {
   admin: AdminJwtPayloadDto;
@@ -18,7 +18,7 @@ interface RequestWithAdmin {
 @ApiTags('Admin — Gestión de administradores')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
-@SkipThrottle()
+@AdminThrottle()
 @Controller('admin/admins')
 export class AdminController implements IAdminController {
   constructor(

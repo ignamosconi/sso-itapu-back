@@ -5,4 +5,8 @@ export class JwtPayloadDto extends UserInfoOauthDto {
   readonly type!: 'access' | 'refresh';
   readonly iat!: number;
   readonly exp!: number;
+  /** Emisor: la URL base de este SSO. */
+  readonly iss!: string;
+  /** Audiencia: el client_id de la app para la que se emitió el token. */
+  readonly aud!: string;
 }

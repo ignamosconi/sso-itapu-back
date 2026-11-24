@@ -7,8 +7,6 @@ import { CodeResponseDto } from '../dtos/code-response.dto.js';
 import { TokenResponseDto } from '../dtos/token-response.dto.js';
 import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
-import { CheckUsernameRequestDto } from '../dtos/check-username-request.dto.js';
-import { CheckUsernameResponseDto } from '../dtos/check-username-response.dto.js';
 import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
 import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
 import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
@@ -16,12 +14,11 @@ import { ResendSetupEmailRequestDto } from '../dtos/resend-setup-email-request.d
 
 export interface IAuthController {
   serveLoginPage(res: Response): void;
-  login(loginDto: LoginRequestDto): Promise<CodeResponseDto>;
+  login(loginDto: LoginRequestDto, res: Response): Promise<CodeResponseDto>;
   token(dto: AuthorizationCodeRequestDto): Promise<TokenResponseDto>;
   refresh(refreshRequestDto: RefreshRequestDto): Promise<TokenResponseDto>;
   logout(dto: LogoutRequestDto): Promise<void>;
-  me(user: JwtPayloadDto): UserInfoOauthDto;
-  checkUsername(dto: CheckUsernameRequestDto): Promise<CheckUsernameResponseDto>;
+  me(user: JwtPayloadDto): UserInfoOauthDto & { aud: string };
   requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<{ cooldownSeconds: number }>;
   validateResetToken(dto: ValidateResetTokenRequestDto): Promise<void>;
   setPassword(dto: SetPasswordRequestDto): Promise<void>;

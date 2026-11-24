@@ -25,21 +25,11 @@ window.addEventListener('load', () => {
     if (form) form.style.display = 'none';
 
     if (errorBox) {
-      errorBox.textContent = 'El enlace de acceso no es válido. Contactá al administrador de la aplicación.';
+      errorBox.textContent = 'El enlace de acceso no es válido. Contactá a un administrador.';
       errorBox.classList.add('visible');
     }
     return;
   }
-
-  fetch(`/admin/clients/${clientId}/info`)
-    .then(res => res.ok ? res.json() : null)
-    .then(data => {
-      if (data?.clientName) {
-        const sub = document.getElementById('loginSub');
-        if (sub) sub.textContent = `Ingresá a ${data.clientName} con tus credenciales de autogestión.`;
-      }
-    })
-    .catch(() => {});
 });
 
 window.addEventListener('pageshow', (event) => {

@@ -1,12 +1,14 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Inject, UseGuards, ParseUUIDPipe, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Inject, UseGuards, Param, ParseUUIDPipe, Request } from '@nestjs/common';
 import { AdminJwtPayloadDto } from '../../admin-auth/dtos/admin-jwt-payload.dto.js';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IAdminController } from './admin.controller.interface.js';
 import type { IAdminService } from '../services/admin.service.interface.js';
 import { CreateAdminDto } from '../dtos/create-admin.dto.js';
+import { DeleteSelfAdminDto } from '../dtos/delete-self-admin.dto.js';
 import { UpdateAdminDto } from '../dtos/update-admin.dto.js';
 import { AdminResponseDto } from '../dtos/admin-response.dto.js';
-import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
+import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard.js';
+import { AdminThrottle } from '../../common/decorators/admin-throttle.decorator.js';
 
 interface RequestWithAdmin {
   admin: AdminJwtPayloadDto;
@@ -16,6 +18,7 @@ interface RequestWithAdmin {
 @ApiTags('Admin — Gestión de administradores')
 @ApiBearerAuth('admin-jwt')
 @UseGuards(AdminJwtGuard)
+@AdminThrottle()
 @Controller('admin/admins')
 export class AdminController implements IAdminController {
   constructor(
@@ -48,21 +51,28 @@ export class AdminController implements IAdminController {
 
   @ApiOperation({
     summary: 'Actualizar propio usuario',
-    description: 'Un admin solo puede editar su propio usuario y contraseña.',
+    description: 'Un admin solo puede editar su propio usuario y contraseña confirmando su contraseña actual.',
   })
   @ApiResponse({ status: 200, type: AdminResponseDto })
+  @ApiResponse({ status: 400, description: 'Datos inválidos o sin cambios' })
+  @ApiResponse({ status: 401, description: 'Contraseña actual incorrecta' })
   @ApiResponse({ status: 404, description: 'Admin no encontrado' })
+  @ApiResponse({ status: 409, description: 'Username ya en uso' })
   @Patch('me')
   updateSelf(@Body() dto: UpdateAdminDto, @Request() req: RequestWithAdmin): Promise<AdminResponseDto> {
     return this.adminService.updateSelf(req.admin.sub, dto);
   }
 
-  @ApiOperation({ summary: 'Eliminar administrador' })
-  @ApiResponse({ status: 200, description: 'Admin eliminado' })
-  @ApiResponse({ status: 400, description: 'No se puede eliminar el último admin' })
-  @ApiResponse({ status: 404, description: 'Admin no encontrado' })
-  @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.adminService.remove(id);
+  @ApiOperation({
+    summary: 'Eliminar propia cuenta',
+    description:
+      'Un admin solo puede eliminar su propia cuenta. Requiere contraseña actual y frase de confirmación. No está permitido si es el último admin del sistema.',
+  })
+  @ApiResponse({ status: 200, description: 'Cuenta eliminada correctamente.' })
+  @ApiResponse({ status: 400, description: 'Último admin — no se puede eliminar.' })
+  @ApiResponse({ status: 401, description: 'Contraseña incorrecta.' })
+  @Delete('me')
+  removeSelf(@Body() dto: DeleteSelfAdminDto, @Request() req: RequestWithAdmin): Promise<void> {
+    return this.adminService.removeSelf(req.admin.sub, dto);
   }
 }

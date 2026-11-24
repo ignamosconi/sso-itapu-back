@@ -23,6 +23,10 @@ export class RefreshTokenEntity {
   @Column({ default: false })
   used!: boolean;
 
+  // Momento en que se canjeó (rotó) el token. Sirve para tolerar refresh concurrentes (P9).
+  @Column({ nullable: true, type: 'timestamp' })
+  usedAt!: Date | null;
+
   @Column({ default: false })
   revoked!: boolean;
 
@@ -38,6 +42,7 @@ export class RefreshTokenEntity {
   // App OAuth a través de la cual se autenticó el alumno.
   // NULL para tokens de tipo 'admin' (no pasan por una app OAuth).
   // Siempre presente para tokens de tipo 'student'.
+  @Index()
   @Column({ nullable: true, type: 'int' })
   clientId!: number | null;
 

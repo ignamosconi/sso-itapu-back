@@ -5,7 +5,7 @@ export class AdminEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ unique: true })
+  @Column({ unique: true, length: 32 })
   username!: string;
 
   @Column()

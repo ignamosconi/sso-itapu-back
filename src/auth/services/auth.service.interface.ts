@@ -6,6 +6,10 @@ import { CodeResponseDto } from '../dtos/code-response.dto.js';
 import { TokenResponseDto } from '../dtos/token-response.dto.js';
 import { UserInfoOauthDto } from '../dtos/user-info-oauth.dto.js';
 import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
+import { SetPasswordRequestDto } from '../dtos/set-password-request.dto.js';
+import { RequestPasswordResetRequestDto } from '../dtos/request-password-reset-request.dto.js';
+import { ValidateResetTokenRequestDto } from '../dtos/validate-reset-token-request.dto.js';
+import { ResendSetupEmailRequestDto } from '../dtos/resend-setup-email-request.dto.js';
 
 export interface IAuthService {
   validateAndGetUserInfo(loginDto: LoginRequestDto): Promise<UserInfoOauthDto>;
@@ -14,4 +18,8 @@ export interface IAuthService {
   refreshTokens(refreshRequestDto: RefreshRequestDto): Promise<TokenResponseDto>;
   logout(dto: LogoutRequestDto): Promise<void>;
   getCleanUserInfo(payload: JwtPayloadDto): UserInfoOauthDto;
+  requestPasswordReset(dto: RequestPasswordResetRequestDto): Promise<{ cooldownSeconds: number }>;
+  validatePasswordResetToken(dto: ValidateResetTokenRequestDto): Promise<void>;
+  setPassword(dto: SetPasswordRequestDto): Promise<void>;
+  resendSetupEmail(dto: ResendSetupEmailRequestDto): Promise<{ cooldownSeconds: number }>;
 }

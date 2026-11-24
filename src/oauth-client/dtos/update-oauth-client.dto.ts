@@ -1,4 +1,5 @@
-import { IsString, IsUrl, MinLength, IsArray, ArrayMaxSize, ArrayMinSize, IsOptional } from 'class-validator';
+import { IsString, MinLength, IsArray, ArrayMaxSize, ArrayMinSize, IsOptional, IsUUID, MaxLength } from 'class-validator';
+import { IsRedirectUri } from '../../common/validators/is-redirect-uri.validator.js';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateOAuthClientDto {
@@ -6,6 +7,7 @@ export class UpdateOAuthClientDto {
   @IsOptional()
   @IsString()
   @MinLength(2)
+  @MaxLength(100)
   clientName?: string;
 
   @ApiPropertyOptional({
@@ -15,6 +17,11 @@ export class UpdateOAuthClientDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(5)
-  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['http', 'https'] }, { each: true })
+  @IsRedirectUri({ each: true })
   redirectUris?: string[];
+
+  @ApiPropertyOptional({ example: 'uuid-del-usuario', description: 'ID del nuevo usuario responsable (debe estar activo)' })
+  @IsOptional()
+  @IsUUID()
+  responsibleUserId?: string;
 }

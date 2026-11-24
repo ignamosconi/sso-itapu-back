@@ -30,6 +30,7 @@ describe('CredentialTokenService', () => {
   beforeEach(async () => {
     mockRepo = {
       save: jest.fn(),
+      update: jest.fn().mockResolvedValue({}),
       findOne: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
@@ -59,7 +60,15 @@ describe('CredentialTokenService', () => {
   });
 
   describe('generate', () => {
-    it('debería guardar el token hasheado y retornar el plain text', async () => {
+    it('debería invalidar tokens previos, guardar el nuevo hasheado y retornar el plain text', async () => {
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 2 }),
+      };
+      mockRepo.createQueryBuilder.mockReturnValue(updateQb);
       mockRepo.save.mockResolvedValue({});
 
       const dto = new GenerateCredentialTokenDto();
@@ -72,6 +81,14 @@ describe('CredentialTokenService', () => {
 
       const token = await service.generate(dto);
 
+      // Verifica que se invalidaron tokens previos
+      expect(mockRepo.createQueryBuilder).toHaveBeenCalled();
+      expect(updateQb.set).toHaveBeenCalledWith({ used: true, encryptedSecret: '' });
+      expect(updateQb.where).toHaveBeenCalledWith('"oauthClientId" = :clientId', { clientId: 1 });
+      expect(updateQb.andWhere).toHaveBeenCalledWith('used = false');
+      expect(updateQb.execute).toHaveBeenCalled();
+
+      // Verifica que se guardó el nuevo token
       expect(typeof token).toBe('string');
       expect(token.length).toBeGreaterThan(0);
       expect(mockRepo.save).toHaveBeenCalledWith(
@@ -89,6 +106,17 @@ describe('CredentialTokenService', () => {
 
   describe('consume', () => {
     it('debería retornar las credenciales descifradas si el token es válido', async () => {
+      // Mock del createQueryBuilder para la invalidación de tokens previos (dentro de generate)
+      const invalidateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      };
+      mockRepo.createQueryBuilder
+        .mockReturnValueOnce(invalidateQb); // para generate()
+
       // Primero generamos un token real para obtener un encryptedSecret válido
       mockRepo.save.mockResolvedValue({});
       const dto = new GenerateCredentialTokenDto();
@@ -107,7 +135,7 @@ describe('CredentialTokenService', () => {
         encryptedSecret: savedData.encryptedSecret,
       });
 
-      const qb = {
+      const consumeQb = {
         update: jest.fn().mockReturnThis(),
         set: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -115,16 +143,15 @@ describe('CredentialTokenService', () => {
         returning: jest.fn().mockReturnThis(),
         execute: jest.fn().mockResolvedValue({ affected: 1, raw: [record] }),
       };
-      mockRepo.createQueryBuilder.mockReturnValue(qb);
+      mockRepo.createQueryBuilder.mockReturnValueOnce(consumeQb);
 
-      // El token plain que generamos — necesitamos capturarlo del save mock
-      // Como el plain se genera interno, usamos cualquier string (el consume
-      // usa el hash para buscar, no el plain directamente en el test)
       const result = await service.consume('cualquier-token');
 
       expect(result.plainSecret).toBe('mi-secret-plain');
       expect(result.clientName).toBe('TestApp');
       expect(result.redirectUris).toEqual(['https://app.com/callback']);
+      // N9: tras entregar el secret se borra de la base
+      expect(mockRepo.update).toHaveBeenCalledWith({ id: record.id }, { encryptedSecret: '' });
     });
 
     it('debería lanzar NotFoundException si el token no existe', async () => {

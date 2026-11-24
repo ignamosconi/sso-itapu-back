@@ -1,5 +1,8 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, ParseIntPipe, Inject, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { AdminThrottle } from '../../common/decorators/admin-throttle.decorator.js';
+import { ParseDbIdPipe } from '../../common/pipes/parse-db-id.pipe.js';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Inject, UseGuards, Request, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IOAuthClientController } from './oauth-client.controller.interface.js';
 import type { IOAuthClientService } from '../services/oauth-client.service.interface.js';
 import { CreateOAuthClientDto } from '../dtos/create-oauth-client.dto.js';
@@ -7,8 +10,15 @@ import { UpdateOAuthClientDto } from '../dtos/update-oauth-client.dto.js';
 import { OAuthClientResponseDto } from '../dtos/oauth-client-response.dto.js';
 import { OAuthClientCreatedResponseDto } from '../dtos/oauth-client-created-response.dto.js';
 import { OAuthClientInfoDto } from '../dtos/oauth-client-info.dto.js';
-import { SendCredentialsEmailDto } from '../dtos/send-credentials-email.dto.js';
-import { AdminJwtGuard } from '../../auth/guards/admin-jwt.guard.js';
+import { ChangeResponsibleUserDto } from '../dtos/change-responsible-user.dto.js';
+import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard.js';
+import { AdminJwtPayloadDto } from '../../admin-auth/dtos/admin-jwt-payload.dto.js';
+
+
+interface RequestWithAdmin {
+  admin: AdminJwtPayloadDto;
+}
+
 
 @ApiTags('Admin — Clientes OAuth')
 @Controller('admin/clients')
@@ -22,6 +32,7 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 200, type: [OAuthClientResponseDto] })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Get()
   findAll(): Promise<OAuthClientResponseDto[]> {
     return this.oauthClientService.findAll();
@@ -32,8 +43,9 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientResponseDto> {
+  findOne(@Param('id', ParseDbIdPipe) id: number): Promise<OAuthClientResponseDto> {
     return this.oauthClientService.findOne(id);
   }
 
@@ -43,18 +55,25 @@ export class OAuthClientController implements IOAuthClientController {
   })
   @ApiResponse({ status: 200, type: OAuthClientInfoDto })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
+  @ApiQuery({ name: 'redirect_uri', required: false, description: 'Si se envía, la respuesta incluye redirectUriValid.' })
+  // Endpoint público (lo usa el popup). Límite bajo para dificultar el barrido de client_id (N13).
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Get(':id/info')
-  findInfo(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientInfoDto> {
-    return this.oauthClientService.findInfo(id);
+  findInfo(
+    @Param('id', ParseDbIdPipe) id: number,
+    @Query('redirect_uri') redirectUri?: string,
+  ): Promise<OAuthClientInfoDto> {
+    return this.oauthClientService.findInfo(id, redirectUri);
   }
 
   @ApiOperation({ summary: 'Crear nuevo cliente OAuth' })
-  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'El plainSecret solo es visible en esta respuesta.' })
+  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'La respuesta no incluye el secret: queda guardado temporalmente en Redis y se entrega al responsable con POST /admin/clients/:id/send-credentials (link de un solo uso).' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Post()
-  create(@Body() dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto> {
-    return this.oauthClientService.create(dto);
+  create(@Request() req: RequestWithAdmin, @Body() dto: CreateOAuthClientDto): Promise<OAuthClientCreatedResponseDto> {
+    return this.oauthClientService.create(dto, req.admin.sub);
   }
 
   @ApiOperation({ summary: 'Actualizar cliente OAuth' })
@@ -62,9 +81,10 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Patch(':id')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseDbIdPipe) id: number,
     @Body() dto: UpdateOAuthClientDto,
   ): Promise<OAuthClientResponseDto> {
     return this.oauthClientService.update(id, dto);
@@ -75,19 +95,21 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
+  remove(@Param('id', ParseDbIdPipe) id: number): Promise<void> {
     return this.oauthClientService.remove(id);
   }
 
   @ApiOperation({ summary: 'Regenerar client secret' })
-  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'El plainSecret solo es visible en esta respuesta.' })
+  @ApiResponse({ status: 201, type: OAuthClientCreatedResponseDto, description: 'La respuesta no incluye el secret: queda guardado temporalmente en Redis y se entrega al responsable con POST /admin/clients/:id/send-credentials (link de un solo uso).' })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Post(':id/regenerate-secret')
-  regenerateSecret(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientCreatedResponseDto> {
-    return this.oauthClientService.regenerateSecret(id);
+  regenerateSecret(@Request() req: RequestWithAdmin, @Param('id', ParseDbIdPipe) id: number): Promise<OAuthClientCreatedResponseDto> {
+    return this.oauthClientService.regenerateSecret(id, req.admin.sub);
   }
 
   @ApiOperation({ summary: 'Enviar credenciales por email' })
@@ -96,12 +118,28 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 400, description: 'Error al enviar el email' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Post(':id/send-credentials')
   sendCredentialsByEmail(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: SendCredentialsEmailDto,
+    @Request() req: RequestWithAdmin,
+    @Param('id', ParseDbIdPipe) id: number,
   ): Promise<void> {
-    return this.oauthClientService.sendCredentialsByEmail(id, dto.to);
+    return this.oauthClientService.sendCredentialsByEmail(id, req.admin.sub);
+  }
+
+  @ApiOperation({ summary: 'Cambiar usuario responsable del cliente OAuth' })
+  @ApiResponse({ status: 200, type: OAuthClientResponseDto })
+  @ApiResponse({ status: 404, description: 'Cliente o usuario no encontrado' })
+  @ApiResponse({ status: 400, description: 'El usuario no está activo' })
+  @ApiBearerAuth('admin-jwt')
+  @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
+  @Patch(':id/responsible-user')
+  changeResponsibleUser(
+    @Param('id', ParseDbIdPipe) id: number,
+    @Body() dto: ChangeResponsibleUserDto,
+  ): Promise<OAuthClientResponseDto> {
+    return this.oauthClientService.changeResponsibleUser(id, dto);
   }
 
   @ApiOperation({ summary: 'Suspender cliente OAuth', description: 'El cliente no podrá autenticar usuarios hasta que sea reactivado.' })
@@ -109,8 +147,9 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Patch(':id/suspend')
-  suspend(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientResponseDto> {
+  suspend(@Param('id', ParseDbIdPipe) id: number): Promise<OAuthClientResponseDto> {
     return this.oauthClientService.suspend(id);
   }
 
@@ -119,8 +158,9 @@ export class OAuthClientController implements IOAuthClientController {
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiBearerAuth('admin-jwt')
   @UseGuards(AdminJwtGuard)
+  @AdminThrottle()
   @Patch(':id/activate')
-  activate(@Param('id', ParseIntPipe) id: number): Promise<OAuthClientResponseDto> {
+  activate(@Param('id', ParseDbIdPipe) id: number): Promise<OAuthClientResponseDto> {
     return this.oauthClientService.activate(id);
   }
 }

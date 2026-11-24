@@ -3,57 +3,72 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/png" href="/app/assets/logo-utn.png">
-  <title>SSO - UTN FRVM</title>
+  <link rel="icon" type="image/png" href="/app/assets/logo-itapu.png">
+  <title>SSO - ITAPU</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/app/login/style.css">
-
   <script src="/app/login/init.js"></script>
 </head>
-
 <body>
-
   <div class="login-wrap">
     <div class="login-card">
       <div class="logo-row">
         <div class="logo-circle">
-          <img src="/app/assets/logo-utn.png" alt="UTN">
+          <img src="/app/assets/logo-itapu.png">
         </div>
-        <div class="logo-text"><strong>UTN FRVM</strong></div>
+        <div class="logo-text"><strong>ITAPU</strong></div>
       </div>
       <h1 class="login-title">Iniciar sesión</h1>
-      <p class="login-sub" id="loginSub">Ingresá con tus credenciales de autogestión.</p>
-      
+      <p class="login-sub" id="loginSub">Ingresá a la aplicación con tu usuario.</p>
+
+      <p class="login-sub" id="redirectNote" style="font-size:12px;word-break:break-all"></p>
+
       <div id="errorBox" class="error-msg"></div>
 
-      
-      <form id="loginForm" autocomplete="off"> <!-- Antes: <form id="loginForm" onsubmit="executeLogin(event)" autocomplete="off"> -->
-        <label class="field-label">Legajo</label>
-        <input id="legajo" class="field-input" type="text" placeholder="Ej: 13692" autocomplete="new-password" required>
-        
+      <!-- Pantalla 1: usuario -->
+      <div id="screen-username" style="display:none">
+        <label class="field-label">Usuario</label>
+        <input id="usernameInput" class="field-input" type="text"
+               placeholder="Ej: immosconi136" autocomplete="username" required>
+        <button type="button" class="btn-login" id="btnContinue">Continuar</button>
+      </div>
+
+      <!-- Pantalla 2: contraseña -->
+      <div id="screen-password" style="display:none">
+        <button type="button" class="btn-back" id="btnBackFromPassword">← Volver</button>
         <label class="field-label">Contraseña</label>
-        <input id="password" class="field-input" type="password" placeholder="••••••••" autocomplete="new-password" required>
-        
-        <button type="submit" class="btn-login">Ingresar</button>
-      </form>
+          <div class="password-wrap">
+            <input id="passwordInput" class="field-input" type="password"
+                  placeholder="••••••••" autocomplete="current-password" required>
+            <button type="button" class="toggle-password" id="togglePassword"
+                    aria-label="Mostrar contraseña" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+                <line id="eyeSlash" x1="3" y1="3" x2="21" y2="21" style="display:none"/>
+              </svg>
+            </button>
+          </div>
+        <button type="button" class="btn-login" id="btnLogin">Ingresar</button>
+        <button type="button" class="btn-link" id="btnForgot">Es mi primera vez / Olvidé mi contraseña</button>
+      </div>
+
+      <!-- Pantalla 3: sin contraseña (check email) -->
+      <div id="screen-check-email" style="display:none">
+        <p class="login-sub" id="emailText">
+          Si es tu primera vez o no recordás tu contraseña, apretá el botón: si el usuario existe y está habilitado, le enviamos un correo con un link para configurarla o restablecerla. El link expira en 24 horas.
+        </p>
+        <button type="button" class="btn-login" id="btnResend" style="margin-bottom:12px">Enviar correo</button>
+        <p id="resendCountdown" class="login-sub" style="display:none;font-size:12px;text-align:center;margin-top:8px;color:var(--sub-color)"></p>
+        <button type="button" class="btn-back" id="btnBackFromEmail" style="margin-top:8px">← Volver</button>
+      </div>
 
       <hr class="divider">
       <p class="login-footer">Tus credenciales no se comparten con NINGUNA app.</p>
-      
-      <div class="links-row">
-        <a href="https://github.com/ignamosconi/sso-frvm" target="_blank" class="link-btn" title="Auditar Repositorio en GitHub">
-          <img src="/app/assets/github.svg" alt="GitHub">
-          Este repo
-        </a>
-        <a href="https://www.frvm.utn.edu.ar/" target="_blank" class="link-btn" title="Página Principal UTN FRVM">
-          <img src="/app/assets/link.svg" alt="UTN FRVM">
-          frvm.utn.edu.ar
-        </a>
-      </div>
     </div>
   </div>
-
   <script src="/app/login/login.js"></script>
 </body>
 </html>

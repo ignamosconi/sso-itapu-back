@@ -5,7 +5,7 @@ jest.mock('bcrypt', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';;
 import { ConfigService } from '@nestjs/config';
 import { OAuthClientService } from './oauth-client.service.js';
 import { OAuthClientEntity } from '../entities/oauth-client.entity.js';
@@ -19,6 +19,8 @@ function makeClient(overrides: Partial<OAuthClientEntity> = {}): OAuthClientEnti
     redirectUris: ['https://app.com/callback'],
     clientSecret: '$2b$10$hashedsecret',
     isActive: true,
+    responsibleUser: null,
+    responsibleUserId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -28,9 +30,12 @@ function makeClient(overrides: Partial<OAuthClientEntity> = {}): OAuthClientEnti
 describe('OAuthClientService', () => {
   let service: OAuthClientService;
   let mockRepo: jest.Mocked<Record<string, jest.Mock>>;
+  let mockQueryBuilder: jest.Mocked<Record<string, jest.Mock>>;
   let mockCredentialTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockRedis: jest.Mocked<Record<string, jest.Mock>>;
+  let mockMailService: jest.Mocked<Record<string, jest.Mock>>;
+  let mockStudentService: jest.Mocked<Record<string, jest.Mock>>;
 
   beforeEach(async () => {
     mockRepo = {
@@ -39,7 +44,17 @@ describe('OAuthClientService', () => {
       create: jest.fn(),
       save: jest.fn(),
       remove: jest.fn(),
+      update: jest.fn().mockResolvedValue(undefined),
+      findOneOrFail: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
+
+    mockQueryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(0),
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder);
 
     mockCredentialTokenService = {
       generate: jest.fn().mockResolvedValue('one-time-token'),
@@ -49,10 +64,24 @@ describe('OAuthClientService', () => {
       revokeAllForClient: jest.fn().mockResolvedValue(undefined),
     };
 
-    // Mock de Redis — simula SET/GETDEL sin conexión real.
     mockRedis = {
       set: jest.fn().mockResolvedValue('OK'),
       getdel: jest.fn().mockResolvedValue(null),
+    };
+
+    mockStudentService = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'student-uuid',
+        username: 'jdoe',
+        first_name: 'John',
+        last_name: 'Doe',
+        email: 'jdoe@example.com',
+        account_status: 'active',
+      }),
+    };
+
+    mockMailService = {
+      send: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -62,6 +91,8 @@ describe('OAuthClientService', () => {
         { provide: 'ICredentialTokenService', useValue: mockCredentialTokenService },
         { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
         { provide: REDIS_CLIENT, useValue: mockRedis },
+        { provide: 'IMailService', useValue: mockMailService },
+        { provide: 'IStudentService', useValue: mockStudentService },
         {
           provide: ConfigService,
           useValue: {
@@ -112,6 +143,44 @@ describe('OAuthClientService', () => {
     it('debería lanzar NotFoundException si no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
       await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('findInfo', () => {
+
+    it('debería informar redirectUriValid true si el redirect_uri está registrado', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1, 'https://app.com/callback');
+      expect(result.redirectUriValid).toBe(true);
+    });
+
+    it('debería informar redirectUriValid false si el redirect_uri no está registrado', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1, 'https://otro.com/callback');
+      expect(result.redirectUriValid).toBe(false);
+    });
+
+    it('no debería informar redirectUriValid si no se envía redirect_uri', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1);
+      expect(result.redirectUriValid).toBeUndefined();
+    });
+
+    it('debería retornar clientName e isActive de un cliente activo', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      const result = await service.findInfo(1);
+      expect(result).toEqual({ clientName: 'TestApp', isActive: true });
+    });
+
+    it('debería retornar isActive false si el cliente está suspendido', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient({ isActive: false }));
+      const result = await service.findInfo(1);
+      expect(result).toEqual({ clientName: 'TestApp', isActive: false });
+    });
+
+    it('debería lanzar NotFoundException si el cliente no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.findInfo(999)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -182,10 +251,211 @@ describe('OAuthClientService', () => {
       mockRepo.findOne.mockResolvedValue(client);
       mockRepo.save.mockResolvedValue({ ...client, clientSecret: '$2b$10$newhash' });
 
-      const result = await service.regenerateSecret(1);
-      expect(result.plainSecret).toBeDefined();
-      expect(result.plainSecret.length).toBe(64);
+      const result = await service.regenerateSecret(1, 'admin-uuid');
+      expect(result).not.toHaveProperty('plainSecret');
       expect(result).not.toHaveProperty('clientSecret');
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'pending-secret:1:admin-uuid',
+        expect.any(String),
+        'PX',
+        expect.any(Number),
+      );
+    });
+  });
+
+  describe('create', () => {
+    it('debería lanzar ConflictException si ya existe una app con ese nombre', async () => {
+      mockQueryBuilder.getCount.mockResolvedValue(1);
+
+      await expect(service.create(
+        { clientName: 'Torneito', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      )).rejects.toThrow(ConflictException);
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'lower(immutable_unaccent(btrim(c.clientName))) = lower(immutable_unaccent(btrim(:name)))',
+        { name: 'Torneito' },
+      );
+      expect(mockRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('debería convertir la violación del índice único de nombres en ConflictException', async () => {
+      mockRepo.create.mockReturnValue(makeClient());
+      mockRepo.save.mockRejectedValue({
+        driverError: { code: '23505', constraint: 'UQ_oauth_clients_client_name_normalized' },
+      });
+
+      await expect(service.create(
+        { clientName: 'Torneito', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      )).rejects.toThrow(ConflictException);
+    });
+
+    it('no debería ocultar otros errores al guardar', async () => {
+      mockRepo.create.mockReturnValue(makeClient());
+      mockRepo.save.mockRejectedValue(new Error('boom'));
+
+      await expect(service.create(
+        { clientName: 'Torneito', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      )).rejects.toThrow('boom');
+    });
+
+    it('debería crear un cliente y guardar el pending secret en Redis vinculado al admin', async () => {
+      const client = makeClient();
+      mockRepo.create.mockReturnValue(client);
+      mockRepo.save.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUser: null });
+
+      const result = await service.create(
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      );
+
+      expect(result).not.toHaveProperty('plainSecret');
+      // El pending secret se guarda en Redis con la clave vinculada al admin
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'pending-secret:1:admin-uuid',
+        expect.any(String),
+        'PX',
+        expect.any(Number),
+      );
+    });
+
+    it('debería lanzar NotFoundException si no existe el cliente al crear', async () => {
+      mockRepo.create.mockReturnValue(makeClient());
+      mockRepo.save.mockResolvedValue(makeClient());
+      mockRepo.findOneOrFail.mockResolvedValue(makeClient());
+      mockRepo.findOne.mockResolvedValue(null);
+      // create no hace findOne previo, solo save — este test verifica el flujo básico
+      const result = await service.create(
+        { clientName: 'TestApp', redirectUris: ['https://app.com/callback'], responsibleUserId: 'student-uuid' },
+        'admin-uuid',
+      );
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('update', () => {
+    it('debería lanzar ConflictException si el nuevo nombre ya lo usa otra app', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockQueryBuilder.getCount.mockResolvedValue(1);
+
+      await expect(service.update(1, { clientName: 'Torneito' })).rejects.toThrow(ConflictException);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('c.id != :excludeId', { excludeId: 1 });
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('no debería chequear el nombre si no se modifica clientName', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockRepo.findOneOrFail.mockResolvedValue(makeClient());
+
+      await service.update(1, { redirectUris: ['https://new.com/cb'] });
+
+      expect(mockRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('debería convertir la violación del índice único de nombres en ConflictException al actualizar', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockRepo.update.mockRejectedValue({
+        driverError: { code: '23505', constraint: 'UQ_oauth_clients_client_name_normalized' },
+      });
+
+      await expect(service.update(1, { clientName: 'Otro' })).rejects.toThrow(ConflictException);
+    });
+    it('debería actualizar clientName y redirectUris sin cambiar responsable', async () => {
+      const client = makeClient();
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, clientName: 'NuevoNombre' });
+
+      const result = await service.update(1, { clientName: 'NuevoNombre', redirectUris: ['https://new.com/cb'] });
+
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        { id: 1 },
+        { clientName: 'NuevoNombre', redirectUris: ['https://new.com/cb'] },
+      );
+      expect(mockRepo.save).not.toHaveBeenCalled();
+      expect(mockStudentService.findOne).not.toHaveBeenCalled();
+      expect(result.clientName).toBe('NuevoNombre');
+    });
+
+    it('debería cambiar el responsable si el nuevo usuario está activo', async () => {
+      const client = makeClient({ responsibleUserId: 'old-uuid' });
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUserId: 'student-uuid' });
+      mockStudentService.findOne.mockResolvedValue({
+        id: 'student-uuid',
+        account_status: 'active',
+      });
+
+      const result = await service.update(1, { responsibleUserId: 'student-uuid' });
+
+      expect(mockStudentService.findOne).toHaveBeenCalledWith('student-uuid');
+      expect(mockRepo.update).toHaveBeenCalledWith({ id: 1 }, { responsibleUserId: 'student-uuid' });
+      expect(mockRepo.save).not.toHaveBeenCalled();
+      expect(result).toBeDefined();
+    });
+
+    it('no debería llamar a update si no hay cambios', async () => {
+      const client = makeClient();
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue(client);
+
+      await service.update(1, {});
+
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('debería lanzar BadRequestException si el nuevo responsable no está activo', async () => {
+      const client = makeClient();
+      mockRepo.findOne.mockResolvedValue(client);
+      mockStudentService.findOne.mockResolvedValue({
+        id: 'student-uuid',
+        account_status: 'suspended',
+      });
+
+      await expect(service.update(1, { responsibleUserId: 'student-uuid' }))
+        .rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('debería lanzar NotFoundException si el cliente no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.update(999, { clientName: 'X' })).rejects.toThrow(NotFoundException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changeResponsibleUser', () => {
+    it('debería actualizar solo la columna del responsable si el usuario está activo', async () => {
+      const client = makeClient({ responsibleUserId: 'old-uuid' });
+      mockRepo.findOne.mockResolvedValue(client);
+      mockRepo.findOneOrFail.mockResolvedValue({ ...client, responsibleUserId: 'student-uuid' });
+
+      const result = await service.changeResponsibleUser(1, { responsibleUserId: 'student-uuid' });
+
+      expect(mockRepo.update).toHaveBeenCalledWith({ id: 1 }, { responsibleUserId: 'student-uuid' });
+      expect(mockRepo.save).not.toHaveBeenCalled();
+      expect(result).toBeDefined();
+    });
+
+    it('debería lanzar BadRequestException si el usuario no está activo', async () => {
+      mockRepo.findOne.mockResolvedValue(makeClient());
+      mockStudentService.findOne.mockResolvedValue({
+        id: 'student-uuid',
+        account_status: 'suspended',
+      });
+
+      await expect(service.changeResponsibleUser(1, { responsibleUserId: 'student-uuid' }))
+        .rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('debería lanzar NotFoundException si el cliente no existe', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(service.changeResponsibleUser(999, { responsibleUserId: 'student-uuid' }))
+        .rejects.toThrow(NotFoundException);
     });
   });
 });

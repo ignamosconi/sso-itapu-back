@@ -5,9 +5,11 @@ import { JwtModule } from '@nestjs/jwt';
 import { OAuthClientEntity } from './entities/oauth-client.entity.js';
 import { OAuthClientService } from './services/oauth-client.service.js';
 import { OAuthClientController } from './controllers/oauth-client.controller.js';
-import { AdminJwtGuard } from '../auth/guards/admin-jwt.guard.js';
+import { AdminJwtGuard } from '../common/guards/admin-jwt.guard.js';
 import { CredentialTokenModule } from '../credential-token/credential-token.module.js';
 import { RefreshTokenModule } from '../refresh-token/refresh-token.module.js';
+import { MailModule } from '../mail/mail.module.js';
+import { StudentModule } from '../student/student.module.js';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { RefreshTokenModule } from '../refresh-token/refresh-token.module.js';
     JwtModule.register({}),
     CredentialTokenModule,
     RefreshTokenModule,
+    MailModule,
+    StudentModule,
   ],
   controllers: [OAuthClientController],
   providers: [

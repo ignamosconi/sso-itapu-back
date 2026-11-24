@@ -1,18 +1,19 @@
-# SSO FRVM — Backend
+# SSO ITAPU — Backend
 
-Sistema de autenticación único (SSO) para aplicaciones integradas con UTN FRVM. Permite que cualquier app registrada en el sistema pueda autenticar alumnos usando sus credenciales de Autogestión, sin que esas credenciales sean compartidas con la app integradora.
+Sistema de autenticación único (SSO) para ITAPU. Permite que cualquier app registrada pueda autenticar usuarios usando sus credenciales del sistema, sin que esas credenciales sean compartidas con la app integradora.
 
 ## ¿Qué hace este repositorio?
 
 Implementa un servidor OAuth 2.0 con flujo de authorization code que:
 
-- Valida las credenciales de alumnos contra el endpoint público de Autogestión UTN FRVM.
+- Gestiona el padrón de usuarios de ITAPU (alumnos, docentes, personal no docente, autoridades, etc.).
+- Autentica usuarios contra la base de datos propia del sistema.
 - Emite authorization codes de un solo uso (TTL configurable, por defecto 2 minutos).
 - Intercambia esos codes por access tokens y refresh tokens JWT.
-- Expone un endpoint `/sso/me` para que las apps integradoras identifiquen al alumno autenticado.
-- Provee un panel de administración (repositorio separado) para gestionar administradores del sistema y aplicaciones cliente registradas.
+- Expone un endpoint `/sso/me` para que las apps integradoras identifiquen al usuario autenticado.
+- Provee un panel de administración (repositorio separado) para gestionar administradores, usuarios y aplicaciones cliente registradas.
 - Implementa 2FA obligatorio (TOTP) para todos los administradores.
-- Usa links de un solo uso con cifrado AES-256-GCM para la entrega de client secrets.
+- Usa links de un solo uso con cifrado AES-256-GCM para la entrega de client secrets y el setup de contraseñas.
 
 
 ## Tecnologías utilizadas
@@ -20,64 +21,84 @@ Implementa un servidor OAuth 2.0 con flujo de authorization code que:
 - **Runtime:** Node.js 22
 - **Framework:** NestJS 11
 - **Base de datos:** PostgreSQL con TypeORM (migraciones, sin `synchronize`)
+- **Caché / sesiones:** Redis
 - **Autenticación:** JWT HS256 (access + refresh tokens con rotación), TOTP via `otplib`
 - **Validación:** class-validator + class-transformer con `ValidationPipe` global
-- **Seguridad:** Helmet, `@nestjs/throttler`, bcrypt (cost 12 para admins, 10 para client secrets), AES-256-GCM para secrets en reposo
+- **Seguridad:** Helmet, `@nestjs/throttler`, bcrypt (cost 12 para admins, 10 para usuarios), AES-256-GCM para secrets en reposo
 - **Email:** Nodemailer (SMTP)
+- **Excel:** SheetJS (`xlsx`) para carga masiva de usuarios
 - **Documentación:** Swagger UI (protegido con Basic Auth)
 - **Tests:** Jest + ts-jest
 - **CI:** GitHub Actions
+
 
 ## ¿Cómo integro mi app con el SSO?
 
 ### 1. Obtener credenciales
 
-Para poder integrar tu app con el SSO necesitás un **Client ID** y un **Client Secret**. Estos los entrega el equipo de sistemas de UTN FRVM al registrar tu app.
+Para integrar tu app necesitás un **Client ID** y un **Client Secret**. Los entrega el equipo de administración de ITAPU al registrar tu app.
 
-Al registrar tu app vas a recibir un email con un link de un solo uso. Ese link expira en 24 horas y solo puede abrirse una vez. Al abrirlo vas a ver:
+Vas a recibir un email con un link de un solo uso que expira en 24 horas. Al abrirlo vas a ver:
 
 - **Client ID** — número entero que identifica tu app.
-- **Client Secret** — string de 64 caracteres hexadecimales. Guardalo en un lugar seguro. Si lo perdés, el equipo de sistemas puede regenerarlo.
+- **Client Secret** — string de 64 caracteres hexadecimales. Guardalo en un lugar seguro. Si lo perdés, el equipo de administración puede regenerarlo.
 
 > **Importante:** el Client Secret nunca debe estar en el frontend de tu app. Debe estar exclusivamente en tu backend.
 
 
-### 2. Flujo de autenticación
+### 2. Endpoints de referencia (públicos)
+
+Antes de empezar, consultá estos endpoints para no hardcodear valores en tu código:
+
+```http
+GET https://sso.itapu.edu.ar/sso/info/domain-roles
+→ ["Alumno", "Profesor", "Autoridad", "No Docente"]   // valores posibles del campo "cargo" en /sso/me
+
+GET https://sso.itapu.edu.ar/sso/info/specialties
+→ ["Química", "Mecánica", ...]              // valores posibles del campo "especialidad" en /sso/me
+```
+
+No hardcodees estos valores. Si el administrador agrega o renombra un cargo o especialidad, tu app lo refleja sin cambios de código.
+
+
+### 3. Flujo de autenticación
 
 El SSO usa el flujo **OAuth 2.0 Authorization Code**. El popup de login lo provee el SSO; vos solo tenés que abrirlo y escuchar el resultado.
 
 #### Paso 1 — Abrir el popup de login
 
-Desde tu frontend, abrí un popup apuntando al login del SSO:
-
 ```javascript
-const state = crypto.randomUUID(); // valor aleatorio para prevenir CSRF
+const state = crypto.randomUUID();
 sessionStorage.setItem('oauth_state', state);
 
 const popup = window.open(
-  `https://sso.frvm.utn.edu.ar/sso/login` +
+  `https://sso.itapu.edu.ar/sso/login` +
   `?client_id=${CLIENT_ID}` +
   `&redirect_uri=${encodeURIComponent('https://tu-app.com/callback')}` +
-  `&state=${state}`,
+  `&state=${state}` +
+  `&theme=dark`,   // o theme=light
   'sso_login',
-  'width=480,height=600'
+  'width=480,height=560'
 );
 ```
 
-(!) El popup de login del SSO soporta modo oscuro y modo claro. Podés pasarle el parámetro theme=light o theme=dark en la URL para que coincida con el tema de tu app.
+El popup pide primero el nombre de usuario y después la contraseña. **No revela si un usuario existe, está suspendido o pendiente**: ante cualquier fallo responde «Usuario o contraseña incorrectos». Si es la primera vez o no recuerda la contraseña, el alumno toca **«Es mi primera vez / Olvidé mi contraseña»** y, si el usuario existe y está habilitado, recibe un correo con un link para configurarla o restablecerla (el correo se envía solo cuando el alumno lo pide; no es automático). Solo si la contraseña es correcta y la cuenta está suspendida se le informa que contacte a un administrador.
+
+Reglas de la `redirect_uri`:
+
+- Tiene que coincidir **exactamente** con una de las URIs registradas para tu aplicación (comparación de texto exacta).
+- Se registran con **`https`**; `http` solo se acepta para `localhost`, `127.0.0.1` y `[::1]` (desarrollo). **En producción (`NODE_ENV=production`) se rechazan también esos hosts**, salvo que se defina `ALLOW_LOCALHOST_REDIRECTS=true`. No se admiten comodines (`*`), usuario/contraseña en la URL ni fragmentos (`#`). Máximo 2048 caracteres.
+- Es el único destino al que el popup entrega el `code` (`postMessage` al **origen** de esa URI). Además, el popup le muestra al alumno el dominio al que va a volver.
+- El `code` queda atado a la `redirect_uri` con la que se emitió: en el paso 3 hay que enviar **la misma**.
 
 #### Paso 2 — Escuchar el resultado
 
-El popup envía el authorization code vía `postMessage`. Verificá siempre el origen y el state antes de procesarlo:
-
 ```javascript
 window.addEventListener('message', (event) => {
-  // Verificar que el mensaje viene del SSO
-  if (event.origin !== 'https://sso.frvm.utn.edu.ar') return;
+  if (event.origin !== 'https://sso.itapu.edu.ar') return;
 
   const { code, state } = event.data;
 
-  // Verificar que el state coincide con el que generamos
   if (state !== sessionStorage.getItem('oauth_state')) {
     console.error('State inválido — posible ataque CSRF');
     return;
@@ -85,7 +106,6 @@ window.addEventListener('message', (event) => {
 
   sessionStorage.removeItem('oauth_state');
 
-  // Enviar el code a tu backend para canjear por tokens
   fetch('/tu-backend/auth/callback', {
     method: 'POST',
     body: JSON.stringify({ code }),
@@ -96,10 +116,8 @@ window.addEventListener('message', (event) => {
 
 #### Paso 3 — Canjear el code por tokens (desde tu backend)
 
-El code es de un solo uso y expira en 2 minutos. Canjealo inmediatamente desde tu backend:
-
 ```http
-POST https://sso.frvm.utn.edu.ar/sso/token
+POST https://sso.itapu.edu.ar/sso/token
 Content-Type: application/json
 
 {
@@ -123,12 +141,14 @@ Respuesta:
 
 Guardá ambos tokens en tu backend. **Nunca los expongas al frontend.**
 
-#### Paso 4 — Identificar al alumno autenticado
+Los tokens son JWT firmados con **HS256** e incluyen `iss` (la URL del SSO, `SSO_BASE_URL`) y `aud` (tu `client_id`). Si validás el `access_token` en tu propio backend, verificá ambos.
 
-Con el access token podés obtener los datos del alumno:
+> Los tokens emitidos antes de esta versión no tienen `iss`/`aud`: al desplegar, los alumnos con sesión abierta tendrán que volver a iniciar sesión.
+
+#### Paso 4 — Identificar al usuario autenticado
 
 ```http
-GET https://sso.frvm.utn.edu.ar/sso/me
+GET https://sso.itapu.edu.ar/sso/me
 Authorization: Bearer ACCESS_TOKEN
 ```
 
@@ -136,59 +156,75 @@ Respuesta:
 
 ```json
 {
-  "sub": "131601",
+  "sub": "uuid-del-usuario",
   "nombre": "Ignacio Mariano",
   "apellido": "Mosconi",
-  "legajo": "13692",
-  "carrera": "Ingeniería en Sistemas de Información",
-  "email": "alumno@gmail.com",
-  "grupo": "Alumno"
+  "username": "immosconi136",
+  "especialidad": "Mecánica",
+  "email": "usuario@gmail.com",
+  "cargo": "Alumno",
+  "aud": "TU_CLIENT_ID"
 }
 ```
 
-Usá el campo `sub` como identificador único del alumno en tu sistema. Es el ID interno de Autogestión y no cambia.
+| Campo | Descripción |
+|-------|-------------|
+| `sub` | Identificador único del usuario (UUID). Usalo como clave en tu sistema — no cambia nunca. |
+| `username` | Nombre de usuario del SSO. |
+| `especialidad` | Especialidad del usuario. Valores posibles: `GET /sso/info/specialties`. |
+| `cargo` | Cargo institucional. Valores posibles: `GET /sso/info/domain-roles`. |
+| `aud` | Tu `client_id`: la aplicación para la que se emitió el token. |
 
 #### Paso 5 — Renovar el access token
 
-El access token expira en 15 minutos. Cuando expire, renovalo con el refresh token desde tu backend:
+El access token expira en 15 minutos. Renovalo **desde tu backend** con las credenciales de tu aplicación:
 
 ```http
-POST https://sso.frvm.utn.edu.ar/sso/refresh
+POST https://sso.itapu.edu.ar/sso/refresh
 Content-Type: application/json
 
 {
+  "client_id": "TU_CLIENT_ID",
+  "client_secret": "TU_CLIENT_SECRET",
   "refresh_token": "TU_REFRESH_TOKEN"
 }
 ```
 
 Respuesta: nuevos `access_token` y `refresh_token`. Reemplazá ambos — el refresh token anterior queda inválido (rotación automática).
 
-> Si intentás usar un refresh token que ya fue usado, el servidor detecta una posible reutilización maliciosa y **revoca toda la sesión**. El alumno tendrá que volver a loguearse.
+- Un refresh token solo se puede renovar con las credenciales de **la aplicación que lo originó**.
+- Cada renovación vuelve a leer al alumno: el nuevo token trae su **cargo, especialidad, nombre y email actuales**. Si el alumno fue **suspendido o eliminado**, responde `401` y la sesión se revoca.
+- Si intentás usar un refresh token ya usado, el servidor revoca toda la sesión y el usuario tendrá que volver a loguearse. **Excepción:** si el segundo uso llega a los pocos segundos del primero (dos pestañas o dos pedidos simultáneos), solo se rechaza ese pedido con `401` y la sesión sigue viva con el token más nuevo. Serializá las renovaciones en tu backend para evitarlo.
+
+> Aplica a las sesiones nuevas. Un refresh token emitido antes de esta versión sigue funcionando, pero ahora también hay que enviar `client_id` y `client_secret`.
 
 #### Paso 6 — Cerrar sesión
 
-Para cerrar la sesión del alumno, revocá el refresh token desde tu backend:
-
 ```http
-POST https://sso.frvm.utn.edu.ar/sso/logout
+POST https://sso.itapu.edu.ar/sso/logout
 Content-Type: application/json
 
 {
+  "client_id": "TU_CLIENT_ID",
+  "client_secret": "TU_CLIENT_SECRET",
   "refresh_token": "TU_REFRESH_TOKEN"
 }
 ```
 
-Respuesta: `204 No Content`. El access token expira naturalmente en máximo 15 minutos.
+Respuesta: `204 No Content`. Con credenciales de aplicación incorrectas responde `401`; el refresh token solo se revoca si pertenece a esa aplicación.
 
 
 ### Consideraciones de seguridad
 
 - **Verificá siempre `event.origin`** en el listener de `postMessage`.
-- **Verificá siempre el `state`** para prevenir ataques CSRF en el flujo OAuth.
-- **Nunca guardes el Client Secret en el frontend** — debe estar exclusivamente en tu backend.
+- **Verificá siempre el `state`** para prevenir ataques CSRF.
+- **Nunca guardes el Client Secret en el frontend.**
 - **Nunca guardes access o refresh tokens en `localStorage`** — usá cookies `HttpOnly` o almacenamiento en servidor.
-- El code de autorización es de un solo uso y expira en 2 minutos.
+- **`/sso/token`, `/sso/refresh` y `/sso/logout` se llaman solo desde tu backend**, nunca desde el navegador: llevan el Client Secret.
+- Validá `iss` y `aud` de los tokens que recibas.
+- El authorization code es de un solo uso, expira en 2 minutos (`CODE_TTL_MS`), vive en Redis y solo se canjea con la `redirect_uri` con la que se emitió.
 - El refresh token rota en cada uso — guardá siempre el último que recibís.
+- Cambiar la contraseña, suspender o dar de baja al alumno cierra sus sesiones.
 
 
 ## Levantar el proyecto localmente
@@ -196,138 +232,216 @@ Respuesta: `204 No Content`. El access token expira naturalmente en máximo 15 m
 ### Requisitos previos
 
 - Node.js 22+
-- PostgreSQL 14+
+- Docker (para PostgreSQL y Redis via `docker compose`)
 - Una cuenta SMTP (Gmail con App Password funciona)
 
 ### Instalación
 
 ```bash
-git clone https://github.com/ignamosconi/sso-frvm.git
-cd sso-frvm
+git clone https://github.com/ignamosconi/sso-itapu-back.git
+cd sso-itapu-back
 npm install
+cp .env.example .env
 ```
 
 ### Variables de entorno
 
-Copiá el archivo de ejemplo y completá los valores:
-
-```bash
-cp .env.example .env
-```
-
 | Variable | Descripción | Ejemplo |
 |----------|-------------|---------|
-| `NODE_ENV` | Entorno. En `production` activa validaciones de secretos y desactiva el seeder. | `development` |
+| `NODE_ENV` | En `production` activa validaciones de secretos y desactiva el seeder. | `development` |
 | `PORT` | Puerto en el que escucha el servidor. | `3000` |
-| `AUTH_ROUTE_PATH` | Prefijo de ruta para los endpoints SSO de alumnos. | `sso` |
-| `CODE_TTL_MS` | TTL del authorization code en milisegundos. | `120000` |
+| `AUTH_ROUTE_PATH` | Prefijo de ruta para los endpoints SSO. | `sso` |
+| `CODE_TTL_MS` | TTL del authorization code en ms. | `120000` |
 | `CREDENTIAL_TOKEN_TTL_MS` | TTL del link de credenciales de un solo uso en ms. | `86400000` |
-| `CREDENTIAL_ENCRYPTION_KEY` | Clave AES-256-GCM para cifrar secrets en reposo. **64 chars hex.** Generá con: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` | — |
-| `TOTP_ENCRYPTION_KEY` | Clave AES-256-GCM para cifrar secrets TOTP en reposo. **64 chars hex.** Mismo comando. | — |
+| `PASSWORD_RESET_TOKEN_TTL_MS` | TTL del link de setup/reset de contraseña en ms. | `86400000` |
+| `CREDENTIAL_ENCRYPTION_KEY` | Clave AES-256-GCM para cifrar secrets en reposo. 64 chars hex. | — |
+| `TOTP_ENCRYPTION_KEY` | Clave AES-256-GCM para cifrar secrets TOTP. 64 chars hex. | — |
+| `ADMIN_PANEL_URL` | URL del panel de administración (para CORS y links en emails). | `http://localhost:5173` |
+| `SSO_BASE_URL` | URL pública de este backend (usada en emails). | `http://localhost:3000` |
 | `REDIS_HOST` | Host de Redis. | `localhost` |
 | `REDIS_PORT` | Puerto de Redis. | `6379` |
-| `REDIS_PASSWORD` | Password de Redis. Requerido en producción. | — |
-| `PENDING_2FA_TTL_MS` | TTL del challenge de 2FA pendiente en milisegundos. | `180000` |
-| `PENDING_2FA_MAX_ATTEMPTS` | Máximo de intentos fallidos de TOTP antes de invalidar el challenge. | `5` |
-| `AUTOGESTION_BASE_URL` | URL base del endpoint público de Autogestión UTN FRVM. | `https://webservice.frvm.utn.edu.ar/autogestion` |
-| `ADMIN_PANEL_URL` | URL del panel de administración (para CORS). | `http://localhost:5173` |
-| `SSO_BASE_URL` | URL pública de este backend (usada en emails). | `http://localhost:3000` |
+| `REDIS_PASSWORD` | Password de Redis. | — |
+| `PENDING_2FA_TTL_MS` | TTL del challenge 2FA pendiente en ms. | `180000` |
+| `PENDING_2FA_MAX_ATTEMPTS` | Intentos fallidos de TOTP antes de invalidar el challenge. | `5` |
+| `PASSWORD_RESET_COOLDOWN_MS` | Cuántos ms (5 min por defecto) el usuario debe esperar para reenviar el correo de "olvidé mi contraseña". | `300000` |
+| `STUDENT_PASSWORD_MAX_ATTEMPTS` | Intentos de contraseña por alumno antes de bloquear la baja. | `5` |
+| `STUDENT_PASSWORD_LOCK_TTL_MS` | Duración de la ventana de conteo y del bloqueo, en ms. | `900000` |
+| `STUDENT_DELETE_THROTTLE_LIMIT` | Máximo de requests de baja de alumnos por IP en la ventana. | `10` |
+| `STUDENT_DELETE_THROTTLE_TTL_MS` | Ventana del límite anterior, en ms. | `60000` |
+| `EMAIL_CHANGE_TOKEN_TTL_MS` | Vencimiento del link de confirmación de cambio de email, en ms. | `3600000` |
+| `STUDENT_EMAIL_CHANGE_THROTTLE_LIMIT` | Máximo de pedidos de cambio de email por IP en la ventana. | `10` |
+| `STUDENT_EMAIL_CHANGE_THROTTLE_TTL_MS` | Ventana del límite anterior, en ms. | `60000` |
+| `LOGIN_MAX_ATTEMPTS` | Intentos fallidos de contraseña por **cuenta** antes de bloquear el login de ese usuario (aunque cambie de IP). | `5` |
+| `LOGIN_LOCK_TTL_MS` | Duración de la ventana de conteo y del bloqueo del login, en ms. | `900000` |
+| `TRUST_PROXY` | Cantidad de proxies inversos confiables delante del back (`0` a `10`). Define de dónde sale la IP para el throttling. | `1` |
+| `THROTTLE_GLOBAL_LIMIT` | Máximo de requests por IP en la ventana, para endpoints sin límite propio. | `30` |
+| `THROTTLE_GLOBAL_TTL_MS` | Ventana del límite global, en ms. | `60000` |
 | `DB_HOST` | Host de PostgreSQL. | `localhost` |
-| `DB_PORT` | Puerto de PostgreSQL. | `5432` |
+| `DB_PORT` | Puerto de PostgreSQL. | `5433` |
 | `DB_USERNAME` | Usuario de PostgreSQL. | `postgres` |
-| `DB_PASSWORD` | Password de PostgreSQL. | `postgres` |
-| `DB_NAME` | Nombre de la base de datos. | `sso_frvm` |
-| `JWT_ACCESS_SECRET` | Secret para firmar access tokens de alumnos. Mínimo 64 chars. | — |
-| `JWT_REFRESH_SECRET` | Secret para firmar refresh tokens de alumnos. Distinto al anterior. | — |
-| `JWT_ACCESS_EXPIRES_IN` | Expiración del access token de alumnos. | `15m` |
-| `JWT_REFRESH_EXPIRES_IN` | Expiración del refresh token de alumnos. | `8h` |
-| `JWT_REFRESH_SESSION_MAX_DURATION` | Duración absoluta máxima de una sesión de alumno, independientemente de la actividad. | `3d` |
-| `JWT_ADMIN_ACCESS_SECRET` | Secret para access tokens de admins. Distinto a los de alumnos. | — |
-| `JWT_ADMIN_REFRESH_SECRET` | Secret para refresh tokens de admins. Distinto a todos los anteriores. | — |
+| `DB_PASSWORD` | Password de PostgreSQL. | — |
+| `DB_NAME` | Nombre de la base de datos. | `sso_itapu` |
+| `JWT_ACCESS_SECRET` | Secret para access tokens. En `production`: mínimo 64 chars. | — |
+| `JWT_REFRESH_SECRET` | Secret para refresh tokens. Distinto a los demás. | — |
+| `JWT_ACCESS_EXPIRES_IN` | Expiración del access token. | `15m` |
+| `JWT_REFRESH_EXPIRES_IN` | Expiración por inactividad del refresh token. | `8h` |
+| `JWT_REFRESH_SESSION_MAX_DURATION` | Duración absoluta máxima de sesión. | `3d` |
+| `JWT_ADMIN_ACCESS_SECRET` | Secret para access tokens de admins. Distinto a los demás. | — |
+| `JWT_ADMIN_REFRESH_SECRET` | Secret para refresh tokens de admins. Distinto a los demás. | — |
 | `JWT_ADMIN_ACCESS_EXPIRES_IN` | Expiración del access token de admins. | `15m` |
 | `JWT_ADMIN_REFRESH_EXPIRES_IN` | Expiración del refresh token de admins. | `1d` |
-| `ADMIN_USERNAME_SEEDER` | Username del admin inicial creado por el seeder (solo en desarrollo). | `admin` |
-| `ADMIN_PASSWORD_SEEDER` | Password del admin inicial (mínimo 8 caracteres). | — |
-| `SWAGGER_USER` | Usuario para acceder a la documentación Swagger. | `admin` |
-| `SWAGGER_PASSWORD` | Password para acceder a la documentación Swagger. | — |
-| `MAIL_HOST` | Host SMTP para envío de emails. | `smtp.gmail.com` |
+| `ADMIN_USERNAME_SEEDER` | Username del primer admin (solo en desarrollo). | `admin` |
+| `ADMIN_PASSWORD_SEEDER` | Password del primer admin. Mínimo 8 caracteres. | — |
+| `SWAGGER_USER` | Usuario para la documentación Swagger. | `admin` |
+| `SWAGGER_PASSWORD` | Password para la documentación Swagger. | — |
+| `MAIL_HOST` | Host SMTP. | `smtp.gmail.com` |
 | `MAIL_PORT` | Puerto SMTP. | `587` |
 | `MAIL_USER` | Usuario SMTP. | `tu_correo@gmail.com` |
-| `MAIL_PASS` | Password SMTP (para Gmail, usar App Password). | — |
-| `MAIL_FROM` | Dirección remitente de los emails. | `tu_correo@gmail.com` |
+| `MAIL_PASS` | Password SMTP (Gmail: usar App Password). | — |
+| `MAIL_FROM` | Dirección remitente. | `tu_correo@gmail.com` |
+| `ALLOW_LOCALHOST_REDIRECTS` | Permitir redirect URIs a `localhost`/`127.0.0.1`/`[::1]` también con `NODE_ENV=production`. Por defecto `false`. | `false` |
+| `MAIL_REQUIRE_TLS` | Exigir STARTTLS/TLS al enviar. Por defecto `true` en `production` y `false` en desarrollo (para un SMTP local sin TLS). | `true` |
 
-> **En producción** todos los secrets JWT, `CREDENTIAL_ENCRYPTION_KEY`, `TOTP_ENCRYPTION_KEY`, `REDIS_PASSWORD` y `ADMIN_PASSWORD_SEEDER` deben ser distintos a cualquier valor del `.env.example`. El servidor no arranca si detecta valores por defecto conocidos con `NODE_ENV=production`.
+> **En producción** el servidor **no arranca** si: algún secret (incluida `DB_PASSWORD`) es un valor por defecto del `.env.example`, algún secret JWT tiene menos de 64 caracteres, o dos de los cuatro secrets JWT son iguales. Con `LOGIN_*`, `STUDENT_*` y `PASSWORD_RESET_COOLDOWN_MS` inválidos tampoco arranca.
 
-### Base de datos y migraciones
+Generá las claves hex con:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
-Las migraciones corren automáticamente al levantar el servidor (`migrationsRun: true`). No hace falta correrlas manualmente en desarrollo.
+### Base de datos
+
+```bash
+docker compose up -d        # levanta PostgreSQL y Redis (ambos solo en 127.0.0.1; requiere DB_PASSWORD y REDIS_PASSWORD en el .env)
+npm run start:dev           # las migraciones corren automáticamente
+```
+
+> **Migraciones nuevas de la auditoría:** `case-insensitive-unique` crea índices únicos sobre `lower(email)` de alumnos y `lower(nombre)` de cargos y especialidades. Si ya existen valores que solo difieren en mayúsculas, **la migración aborta con la lista de duplicados**: corregilos y volvé a arrancar. `refresh-token-used-at` agrega la columna `usedAt` (ventana de tolerancia de refresh simultáneos).
 
 Para generar una nueva migración tras modificar entidades:
 
 ```bash
 npm run migration:generate
-```
-
-Para correr migraciones manualmente:
-
-```bash
 npm run migration:run
 ```
 
 ### Seeder
 
-En entorno `development`, al levantar el servidor se crea automáticamente el primer admin si no existe ninguno, usando las credenciales `ADMIN_USERNAME_SEEDER` / `ADMIN_PASSWORD_SEEDER` del `.env`.
-
-En producción (`NODE_ENV=production`) el seeder está deshabilitado. El primer admin debe crearse manualmente vía CLI o directamente en la DB.
+En `development`, al levantar el servidor se crea automáticamente el primer admin usando `ADMIN_USERNAME_SEEDER` / `ADMIN_PASSWORD_SEEDER`. En producción el seeder está deshabilitado.
 
 ### Comandos
 
 ```bash
-# Instalar dependencias
-npm install
-
-# Levantar en modo desarrollo (con hot reload)
-npm run start:dev
-
-# Build de producción
-npm run build
-
-# Levantar en modo producción
-npm run start:prod
-
-# Correr tests unitarios
-npm run test
-
-# Correr tests con cobertura
-npm run test:cov
-
-# Lint
-npm run lint
+npm install          # instalar dependencias
+npm run start:dev    # desarrollo con hot reload
+npm run build        # build de producción
+npm run start:prod   # producción
+npm run test         # tests unitarios
+npm run test:cov     # tests con cobertura
+npm run lint         # lint
 ```
 
 ### Documentación de la API
-
-Con el servidor corriendo, la documentación Swagger está disponible en:
-
-```
 http://localhost:3000/docs
-```
 
-Requiere las credenciales `SWAGGER_USER` / `SWAGGER_PASSWORD` definidas en el `.env`.
+Requiere `SWAGGER_USER` / `SWAGGER_PASSWORD` del `.env`.
 
+
+## Protección contra fuerza bruta en la baja de alumnos
+
+La baja de un alumno con contraseña exige ingresar esa contraseña, por lo que el endpoint `DELETE /admin/students/:id` tiene dos límites independientes, ambos configurables por entorno:
+
+| Límite | Alcance | Por defecto | Respuesta |
+|--------|---------|-------------|-----------|
+| Requests de baja | Por IP | 10 por minuto | `429` con header `Retry-After` |
+| Intentos de contraseña | Por alumno | 5 cada 15 minutos | `403` con `attemptsRemaining`; al agotarse, `429` con `code: PASSWORD_ATTEMPTS_LOCKED` y `retryAfterSeconds` |
+
+- El contador de intentos vive en Redis y se incrementa **antes** de comparar la contraseña, por lo que los intentos en paralelo también cuentan.
+- Una contraseña correcta durante un bloqueo **no** lo levanta.
+- `GET /admin/students/:id/password-lock` informa si un alumno está bloqueado sin consumir intentos (lo usa el panel para mostrar la espera al abrir el modal).
+- Para levantar un bloqueo manualmente: `DEL student:password-attempts:<id del alumno>` en Redis.
+- Si una variable de estos límites está definida con un valor inválido, el servidor no arranca.
+- **Despliegue:** `TRUST_PROXY` (por defecto `1`) debe coincidir con el número real de proxies delante del back, y el back no debe ser accesible sin pasar por ellos; de lo contrario la IP puede falsearse con `X-Forwarded-For`.
+
+## Protección contra fuerza bruta en el login
+
+Tres capas independientes:
+
+| Capa | Alcance | Por defecto | Respuesta |
+|------|---------|-------------|-----------|
+| Requests de `POST /sso/login` | Por IP | 20 por minuto | `429` |
+| Intentos fallidos de contraseña | Por **cuenta** (nombre de usuario), sin importar la IP | 5 cada 15 minutos (`LOGIN_MAX_ATTEMPTS`, `LOGIN_LOCK_TTL_MS`) | `429` con `Retry-After` |
+| Pedidos de correo (configurar / olvidé mi contraseña) | Por nombre de usuario | 1 cada 5 minutos (`PASSWORD_RESET_COOLDOWN_MS`) | `429` con `retryAfter` |
+
+- El contador vive en Redis (`sso:login-attempts:<usuario>`), es **independiente** del de la baja de alumnos, y se cuenta también para usuarios que no existen (así no revela cuáles existen).
+- Un login correcto limpia el contador. Contrapartida: alguien puede bloquear a propósito a un usuario concreto durante 15 minutos; el bloqueo expira solo.
+- Para levantar un bloqueo manualmente: `DEL sso:login-attempts:<usuario en minúsculas>` en Redis.
+- `/sso/token`, `/sso/refresh` y `/sso/logout` se limitan por **(`client_id` + IP)**, no solo por IP: varias aplicaciones, o varios alumnos entrando a la vez desde el servidor de una aplicación, no se pisan entre sí.
+- Las rutas `/admin/*` (ya autenticadas) tienen un límite de 300 requests por minuto por IP.
+
+## Cambio de email de alumnos
+
+Solo alumnos **activos**. Es un proceso de dos pasos:
+
+1. `POST /admin/students/:id/email-change` (admin) con `{ password, newEmail }`. Requiere la contraseña del alumno (debe estar presente) y **comparte con la baja el mismo contador de intentos** (`STUDENT_PASSWORD_*`), así que no se pueden alternar acciones para evadirlo. Envía un link de confirmación al email **nuevo** y un aviso al email actual.
+2. `POST /<AUTH_ROUTE_PATH>/confirm-email-change` (público) con `{ token }`. El link va a `<ADMIN_PANEL_URL>/confirm-email?token=...`. El token es de un solo uso y se guarda hasheado en la tabla `email_change_requests`.
+
+Al confirmar, en una sola transacción: se cambia el email, se **cierran todas las sesiones** del alumno y se invalidan sus links de restaurar contraseña pendientes (viven en el email viejo). Se avisa al email anterior.
+
+- `sub` no cambia nunca, por lo que las apps no pierden al usuario.
+- **Limitación conocida:** los access tokens ya emitidos siguen siendo válidos hasta `JWT_ACCESS_EXPIRES_IN` (15 minutos por defecto) y `/sso/me` devuelve los datos que viajan en el token, así que las apps pueden ver el email anterior hasta entonces.
+- Las solicitudes vencidas se borran con una tarea diaria (3 AM).
+- Suspender o dar de baja a un alumno también cierra sus sesiones (mismo límite de 15 minutos para los access tokens).
 
 ## Panel de administración
 
-Para gestionar el sistema sin usar la API directamente, existe un panel de administración web en el repositorio:
+El panel está en el repositorio **[github.com/ignamosconi/sso-itapu-front](https://github.com/ignamosconi/sso-itapu-front)**.
 
-**[github.com/ignamosconi/sso-frvm-admin](https://github.com/ignamosconi/sso-frvm-admin)**
+Permite:
 
-El panel permite:
+- Iniciar sesión con 2FA obligatorio (TOTP).
+- Gestionar administradores del sistema.
+- Gestionar el padrón de usuarios: alta individual, carga masiva por Excel, edición, suspensión, baja y reenvío de email de bienvenida.
+- Configurar cargos institucionales y especialidades.
+- Registrar y gestionar aplicaciones cliente OAuth.
+- Regenerar client secrets y enviarlos por email con un link de un solo uso.
+- Ver estadísticas del sistema en el dashboard.
 
-- Iniciar sesión como administrador con autenticación de dos factores (TOTP).
-- Resetear la autenticación de dos factores (2FA) proporcionando la password actual. Esto invalida el secret TOTP actual y obliga al administrador a configurar 2FA nuevamente en su próximo login.
-- Crear y eliminar administradores del sistema.
-- Registrar nuevas aplicaciones cliente, gestionar sus redirect URIs y ver su estado.
-- Suspender y reactivar aplicaciones.
-- Regenerar client secrets.
-- Enviar las credenciales de acceso al desarrollador de la app por email, mediante un link de un solo uso que expira en 24 horas.
+(!) NOTA: El archivo de excel a subir solo podrá tener hasta 500 filas.
+
+## Estructura del código
+
+```
+src/
+├── main.ts · app.module.ts      Arranque y módulo raíz
+├── config/                      Validaciones de arranque (secretos, TRUST_PROXY)
+├── common/                      Piezas compartidas por todos los módulos
+│   ├── guards/                  JwtGuard (alumnos), AdminJwtGuard, AppThrottlerGuard
+│   ├── decorators/              @CurrentUser, @AdminThrottle
+│   ├── pipes/                   ParseDbIdPipe (ids enteros válidos)
+│   └── validators/              @IsRedirectUri, @IsDbIntString
+├── auth/                        Flujo SSO de alumnos: login, token, refresh, logout, me, recuperar contraseña
+├── code/                        Authorization codes (Redis)
+├── refresh-token/               Refresh tokens: rotación y detección de reutilización
+├── oauth-client/                Aplicaciones cliente OAuth
+├── credential-token/            Link de un solo uso para entregar el Client Secret
+├── password-reset-token/        Links de configurar / restablecer contraseña
+├── student/
+│   ├── student.module.ts
+│   ├── students/                Padrón: alta, edición, baja, suspensión, importación por Excel
+│   │   └── controllers · services · dtos · entities
+│   ├── email-change/            Cambio de email de un alumno
+│   └── password-attempts/       Contador de intentos de contraseña (baja y cambio de email)
+├── admin/ · admin-auth/         Administradores y su login con 2FA
+├── domain-role/ · specialty/    Cargos y especialidades
+├── sso-info/ · stats/           Endpoints públicos de referencia y estadísticas
+├── mail/ · redis/               Envío de correo y conexión a Redis
+├── database/                    Migraciones y seeder
+└── public/                      HTML/JS/CSS del popup de login y de la página de credenciales
+```
+
+Dentro de cada módulo: `controllers/`, `services/` (cada servicio con su `.interface.ts` y su `.spec.ts`), `dtos/` y `entities/`.
+
+## Seguridad
+
+El informe de la auditoría de seguridad (hallazgos, cómo se verificaron y cómo se resolvió cada uno) está en [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md). El workflow de CI corre lint, build, tests, `npm audit` y gitleaks; CodeQL y Dependabot están configurados en `.github/`.

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, GoneException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Not, Repository } from 'typeorm';
 import { randomBytes, createHash, createCipheriv, createDecipheriv } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { CredentialTokenEntity } from '../entities/credential-token.entity.js';
@@ -54,6 +55,15 @@ export class CredentialTokenService implements ICredentialTokenService {
   }
 
   async generate(dto: GenerateCredentialTokenDto): Promise<string> {
+    // Invalidar todos los tokens anteriores no usados para este mismo cliente
+    await this.repo
+      .createQueryBuilder()
+      .update(CredentialTokenEntity)
+      .set({ used: true, encryptedSecret: '' }) // el secret de un link invalidado ya no se necesita (N9)
+      .where('"oauthClientId" = :clientId', { clientId: dto.oauthClientId })
+      .andWhere('used = false')
+      .execute();
+
     const plain = randomBytes(32).toString('hex');
     await this.repo.save({
       tokenHash: this.hashToken(plain),
@@ -110,11 +120,29 @@ export class CredentialTokenService implements ICredentialTokenService {
       throw new Error('Los redirect URIs almacenados no tienen un formato válido.');
     }
 
+    // El secret se entrega una sola vez: se descifra y se borra de la base enseguida (N9).
+    // Antes quedaba cifrado en la fila "usada" indefinidamente.
+    let plainSecret: string;
+    try {
+      plainSecret = this.decrypt(record.encryptedSecret);
+    } finally {
+      await this.repo.update({ id: record.id }, { encryptedSecret: '' });
+    }
+
     return {
       oauthClientId: record.oauthClientId,
-      plainSecret: this.decrypt(record.encryptedSecret),
+      plainSecret,
       clientName: record.clientName,
       redirectUris: parsedRedirectUris,
-    }
+    };
+  }
+
+  // Los links que vencieron sin usarse tampoco necesitan conservar el secret cifrado.
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async wipeExpiredSecrets(): Promise<void> {
+    await this.repo.update(
+      { expiresAt: LessThan(new Date()), encryptedSecret: Not('') },
+      { encryptedSecret: '' },
+    );
   }
 }

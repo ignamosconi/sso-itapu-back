@@ -1,118 +1,301 @@
-async function executeLogin(event) {
-  event.preventDefault();
-  const errorBox = document.getElementById('errorBox');
-  const legajo = document.getElementById('legajo').value;
-  const password = document.getElementById('password').value;
-
+(function () {
   const params = new URLSearchParams(window.location.search);
-  const client_id = params.get('client_id') || '';
-  const redirect_uri = params.get('redirect_uri') || '';
+  const clientId = params.get('client_id');
+  const redirectUri = params.get('redirect_uri');
   const state = params.get('state') || '';
+  let currentUsername = '';
+  let resendInterval = null;
+  let emailMode = 'reset';        // un único flujo de correo: configurar u olvidé mi contraseña
+  let resetCooldownEndsAt = 0;    // timestamp (ms) en el que termina el cooldown de reset de currentUsername
 
-  errorBox.classList.remove('visible');
+  // ── Helpers de UI ────────────────────────────────────────────────────────
 
-  try {
-    console.log('1. Ejecutando login');
-    const response = await fetch(window.location.pathname, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ legajo, password, client_id, redirect_uri, state })
+  function showError(msg) {
+    const box = document.getElementById('errorBox');
+    box.classList.remove('visible');
+    setTimeout(() => {
+      box.textContent = msg;
+      box.classList.add('visible');
+    }, 50);
+  }
+
+  function hideError() {
+    document.getElementById('errorBox').classList.remove('visible');
+  }
+
+  function setPasswordVisible(visible) {
+    const input = document.getElementById('passwordInput');
+    const btn = document.getElementById('togglePassword');
+    input.type = visible ? 'text' : 'password';
+    document.getElementById('eyeSlash').style.display = visible ? '' : 'none';
+    btn.setAttribute('aria-pressed', String(visible));
+    btn.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  }
+
+  function showScreen(id) {
+    ['screen-username', 'screen-password', 'screen-check-email', ].forEach(s => {
+      document.getElementById(s).style.display = s === id ? '' : 'none';
+    });
+    hideError();
+    setPasswordVisible(false);
+  }
+
+  function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.style.opacity = loading ? '0.6' : '1';
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+
+  window.addEventListener('load', () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const card = document.querySelector('.login-card');
+        if (card) card.classList.add('visible');
+      });
     });
 
-    console.log('2. Respuesta recibida:', response.status );
-
-    const data = await response.json();
-
-    console.log( '3. Data recibida:', data);
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Error desconocido al autenticar.');
+    if (!clientId || !redirectUri) {
+      document.getElementById('screen-username').style.display = 'none';
+      showError('El enlace de acceso no es válido. Contactá a un administrador.');
+      return;
     }
 
-    console.log( '4. window.opener:', window.opener );
+    function blockLogin(msg) {
+      document.getElementById('loginSub').style.display = 'none';
+      showError(msg);
+    }
 
-    console.log( '5. window.opener existe:', Boolean(window.opener));
+    fetch(`/admin/clients/${encodeURIComponent(clientId)}/info?redirect_uri=${encodeURIComponent(redirectUri)}`)
+      .then(async r => {
+        if (r.status === 400 || r.status === 404) {
+          blockLogin('La aplicación no existe. Contactá a un administrador.');
+          return;
+        }
+        if (!r.ok) {
+          blockLogin('No pudimos verificar la aplicación. Intentá de nuevo más tarde.');
+          return;
+        }
+        const data = await r.json();
+        if (data.isActive === false) {
+          blockLogin('La aplicación está suspendida. Contactá a un administrador.');
+          return;
+        }
+        if (data.redirectUriValid === false) {
+          blockLogin('La URL de redirección en el link no coincide con las registradas. Contactá al desarrollador de la aplicación para que lo resuelva.');
+          return;
+        }
+        if (data.clientName) {
+          document.getElementById('loginSub').textContent =
+            `Ingresá a ${data.clientName} con tu usuario.`;
+        }
+        // Mostramos el origen REAL al que va a volver el código, para que el alumno detecte un link de phishing.
+        try {
+          document.getElementById('redirectNote').textContent = `Vas a volver a: ${new URL(redirectUri).origin}`;
+        } catch { /* la redirect_uri ya fue validada por el servidor */ }
+        showScreen('screen-username');
+      })
+      .catch(() => blockLogin('Error de red. Intentá de nuevo.'));
+  });
 
+  window.addEventListener('pageshow', e => {
+    if (e.persisted) { document.body.style.display = 'none'; window.location.reload(); }
+  });
 
-    const isLight = params.get('theme') === 'light';
+  // ── Paso 1: usuario ───────────────────────────────────────────────────────
+  // Ya no se consulta al servidor en este paso: así la pantalla no revela si el usuario existe,
+  // está suspendido o pendiente. Todo se resuelve recién con usuario + contraseña (o con el correo de acceso).
 
-    const successBg    = isLight ? '#f5f5f5' : '#0f0f1a';
-    const cardBg       = isLight ? '#ffffff'  : 'rgba(255,255,255,0.06)';
-    const cardBorder   = isLight ? '#e0e0e0'  : 'rgba(255,255,255,0.12)';
-    const successColor = isLight ? '#1a1a1a'  : '#ffffff';
-    const subColor     = isLight ? '#666666'  : 'rgba(255,255,255,0.5)';
+  document.getElementById('btnContinue').addEventListener('click', () => {
+    const username = document.getElementById('usernameInput').value.trim();
+    if (!username) { showError('Ingresá tu nombre de usuario.'); return; }
+    if (username !== currentUsername) resetCooldownEndsAt = 0; // el cooldown del correo es por usuario
+    currentUsername = username;
+    document.getElementById('passwordInput').value = '';
+    showScreen('screen-password');
+    document.getElementById('passwordInput').focus();
+  });
 
-    document.body.style.background     = successBg;
-    document.body.style.minHeight      = '100vh';
-    document.body.style.display        = 'flex';
-    document.body.style.alignItems     = 'center';
-    document.body.style.justifyContent = 'center';
-    document.body.style.margin         = '0';
+  document.getElementById('usernameInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btnContinue').click();
+  });
 
+  // ── Paso 2: login ─────────────────────────────────────────────────────────
+
+  document.getElementById('btnLogin').addEventListener('click', async () => {
+    const btn = document.getElementById('btnLogin');
+    const password = document.getElementById('passwordInput').value;
+    if (!password) { showError('Ingresá tu contraseña.'); return; }
+
+    hideError();
+    setLoading(btn, true);
+    try {
+      const route = window.location.pathname; // /sso/login
+      const res = await fetch(route, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUsername, password, client_id: clientId, redirect_uri: redirectUri, state }),
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        const secs = Number(res.headers.get('Retry-After')) || data.retryAfterSeconds || 0;
+        const mins = secs > 0 ? Math.ceil(secs / 60) : 0;
+        showError(mins
+          ? `Demasiados intentos. Probá de nuevo en ${mins} minuto${mins === 1 ? '' : 's'}.`
+          : 'Demasiados intentos. Esperá unos minutos antes de volver a intentar.');
+        return;
+      }
+      if (!res.ok) { showError(Array.isArray(data.message) ? data.message[0] : (data.message || 'Usuario o contraseña incorrectos.')); return; }
+
+      showSuccessAndClose(data.code, data.state);
+    } catch {
+      showError('Error de red. Intentá de nuevo.');
+    } finally {
+      setLoading(btn, false);
+    }
+  });
+
+  document.getElementById('passwordInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btnLogin').click();
+  });
+
+  document.getElementById('togglePassword').addEventListener('click', () => {
+    const input = document.getElementById('passwordInput');
+    setPasswordVisible(input.type === 'password');
+    input.focus();
+  });
+
+  // ── Pantalla de envío de correo (setup y olvidé mi contraseña) ───────────
+  // Deja la pantalla en estado limpio (evita arrastrar el countdown de otro usuario)
+  // y, si hay un cooldown activo, la muestra con el botón deshabilitado.
+  function openEmailScreen(mode, cooldownSeconds) {
+    emailMode = mode;
+    clearInterval(resendInterval);
+    resendInterval = null;
+
+    const btn = document.getElementById('btnResend');
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.textContent = 'Enviar correo';
+    document.getElementById('resendCountdown').style.display = 'none';
+
+    showScreen('screen-check-email');
+    if (cooldownSeconds > 0) {
+      btn.textContent = 'Reenviar correo';
+      startResendCooldown(cooldownSeconds);
+    }
+  }
+
+  // Si el cooldown del reset cambia (envío o 429), lo recordamos para cuando el usuario
+  // vuelva a entrar a "Olvidé mi contraseña" sin volver a consultar al servidor.
+  function applyCooldown(seconds) {
+    if (emailMode === 'reset') resetCooldownEndsAt = Date.now() + seconds * 1000;
+    startResendCooldown(seconds);
+  }
+
+  // ── Reenviar correo de setup ──────────────────────────────────────────────
+  function startResendCooldown(seconds) {
+    const btn = document.getElementById('btnResend');
+    const countdown = document.getElementById('resendCountdown');
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    let remaining = seconds;
+
+    function tick() {
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      countdown.textContent = `Podés reenviarlo en ${m}:${String(s).padStart(2, '0')}`;
+      countdown.style.display = '';
+      remaining--;
+      if (remaining < 0) {
+        clearInterval(resendInterval);
+        resendInterval = null;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.textContent = 'Reenviar correo';
+        countdown.style.display = 'none';
+      }
+    }
+
+    clearInterval(resendInterval);
+    tick();
+    resendInterval = setInterval(tick, 1000);
+  }
+
+  document.getElementById('btnResend').addEventListener('click', async () => {
+    const btn = document.getElementById('btnResend');
+    hideError();
+    setLoading(btn, true);
+    try {
+      // Un solo endpoint para "es mi primera vez" y "olvidé mi contraseña": responde igual exista o no el usuario.
+      const endpoint = '/request-password-reset';
+      const route = window.location.pathname.replace('/login', endpoint);
+      const res = await fetch(route, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentUsername }),
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        applyCooldown(data.retryAfter ?? 300);
+        return;
+      }
+      if (!res.ok) {
+        showError(data.message || 'Error al enviar el correo.');
+        return;
+      }
+      btn.textContent = 'Reenviar correo';
+      applyCooldown(data.cooldownSeconds ?? 300);
+    } catch {
+      showError('Error de red. Intentá de nuevo.');
+    } finally {
+      if (btn.disabled) {
+        btn.style.opacity = '0.5';
+      } else {
+        setLoading(btn, false);
+      }
+    }
+  });
+
+  // ── Olvidé mi contraseña ──────────────────────────────────────────────────
+
+  document.getElementById('btnForgot').addEventListener('click', () => {
+    hideError();
+    const remaining = Math.max(0, Math.ceil((resetCooldownEndsAt - Date.now()) / 1000));
+    openEmailScreen('reset', remaining);
+  });
+
+  // ── Volver ────────────────────────────────────────────────────────────────
+
+  document.getElementById('btnBackFromPassword').addEventListener('click', () => {
+    showScreen('screen-username');
+  });
+
+  document.getElementById('btnBackFromEmail').addEventListener('click', () => {
+    showScreen('screen-password');
+  });
+
+  // ── Success ───────────────────────────────────────────────────────────────
+
+  function showSuccessAndClose(code, returnedState) {
+    document.body.classList.add('is-success');
     document.body.innerHTML = `
-      <div style="text-align: center; font-family: 'Inter', sans-serif; padding: 2rem;">
-        <div style="
-          background: ${cardBg};
-          border: 1px solid ${cardBorder};
-          border-radius: 12px;
-          padding: 1.5rem 2.5rem;
-          display: inline-block;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-          margin-bottom: 1.5rem;
-        ">
-          <div style="font-size: 18px; font-weight: 600; color: ${successColor}; margin-bottom: 6px;">
-            ¡Logueo exitoso!
-          </div>
-          <div style="
-            display: inline-block;
-            background: #f5a705;
-            color: #1a1200;
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 0.06em;
-            padding: 3px 10px;
-            border-radius: 4px;
-            text-transform: uppercase;
-          ">Autenticado</div>
+      <div class="success-wrap">
+        <div class="success-card">
+          <div class="success-title">¡Logueo exitoso!</div>
+          <div class="badge">Autenticado</div>
         </div>
-
-        <p style="color: ${subColor}; font-size: 13px; margin: 0 0 2rem 0;">
-          Cerrá esta página si sigue abierta.
-        </p>
-
-        <div style="animation: fadeIn 0.6s ease-out;">
-          <img src="/app/assets/${isLight ? 'logo-completo.png' : 'logo-completo-light.png'}"
-               alt="UTN FRVM"
-               style="width: 100%; max-width: 260px; height: auto; opacity: ${isLight ? '1' : '0.85'};">
-        </div>
+        <p class="success-sub">Cerrá esta página si sigue abierta.</p>
       </div>
     `;
 
-    
     if (window.opener) {
       let targetOrigin = '*';
-      try {
-        targetOrigin = new URL(redirect_uri).origin;
-      } catch {
-        // redirect_uri inválida: el backend ya la validó, pero si por alguna razón
-        // llegamos acá con una URL malformada, cerramos sin enviar el code.
-        window.close();
-        return;
-      }
-      console.log( '6. targetOrigin:', targetOrigin );
-      console.log( '7. Enviando postMessage' );
-      window.opener.postMessage({ status: 'success', code: data.code, state: data.state }, targetOrigin);
-      console.log( '8. postMessage enviado');
+      try { targetOrigin = new URL(redirectUri).origin; } catch { window.close(); return; }
+      window.opener.postMessage({ status: 'success', code, state: returnedState }, targetOrigin);
       window.close();
     }
-
-
-
-  } catch (err) {
-    errorBox.classList.remove('visible');
-    setTimeout(() => {
-      errorBox.textContent = err.message;
-      errorBox.classList.add('visible');
-    }, 275);
   }
-}
+})();

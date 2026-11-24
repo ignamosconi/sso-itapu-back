@@ -407,6 +407,8 @@ Permite:
 - Regenerar client secrets y enviarlos por email con un link de un solo uso.
 - Ver estadísticas del sistema en el dashboard.
 
+(!) NOTA: El archivo de excel a subir solo podrá tener hasta 500 filas.
+
 ## Estructura del código
 
 ```

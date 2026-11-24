@@ -74,7 +74,7 @@ jobs:
           JWT_REFRESH_SESSION_MAX_DURATION: '3d'
 
       - name: Subir reporte de cobertura
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-backend

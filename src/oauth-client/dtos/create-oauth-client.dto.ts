@@ -1,10 +1,12 @@
-import { IsString, IsUrl, MinLength, IsArray, ArrayMaxSize, ArrayMinSize, IsUUID } from 'class-validator';
+import { IsString, MinLength, IsArray, ArrayMaxSize, ArrayMinSize, IsUUID, MaxLength } from 'class-validator';
+import { IsRedirectUri } from '../../common/validators/is-redirect-uri.validator.js';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateOAuthClientDto {
   @ApiProperty({ example: 'Torneito', minLength: 2 })
   @IsString()
   @MinLength(2)
+  @MaxLength(100)
   clientName!: string;
 
   @ApiProperty({
@@ -14,7 +16,7 @@ export class CreateOAuthClientDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(5)
-  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['http', 'https'] }, { each: true })
+  @IsRedirectUri({ each: true })
   redirectUris!: string[];
 
   @ApiProperty({

@@ -22,6 +22,8 @@
       <h1 class="login-title">Iniciar sesión</h1>
       <p class="login-sub" id="loginSub">Ingresá a la aplicación con tu usuario.</p>
 
+      <p class="login-sub" id="redirectNote" style="font-size:12px;word-break:break-all"></p>
+
       <div id="errorBox" class="error-msg"></div>
 
       <!-- Pantalla 1: usuario -->
@@ -39,16 +41,13 @@
         <input id="passwordInput" class="field-input" type="password"
                placeholder="••••••••" autocomplete="current-password" required>
         <button type="button" class="btn-login" id="btnLogin">Ingresar</button>
-        <button type="button" class="btn-link" id="btnForgot">Olvidé mi contraseña</button>
+        <button type="button" class="btn-link" id="btnForgot">Es mi primera vez / Olvidé mi contraseña</button>
       </div>
 
       <!-- Pantalla 3: sin contraseña (check email) -->
       <div id="screen-check-email" style="display:none">
-        <p class="login-sub" id="emailTextSetup">
-          Para iniciar sesión necesitás configurar tu contraseña. Apretá el botón para enviar un correo a <strong id="maskedEmail"></strong> y poder hacerlo.
-        </p>
-        <p class="login-sub" id="emailTextReset" style="display:none">
-          Apretá el botón para enviar un correo con un link para restablecer tu contraseña. El link expira en 24 horas.
+        <p class="login-sub" id="emailText">
+          Si es tu primera vez o no recordás tu contraseña, apretá el botón: si el usuario existe y está habilitado, le enviamos un correo con un link para configurarla o restablecerla. El link expira en 24 horas.
         </p>
         <button type="button" class="btn-login" id="btnResend" style="margin-bottom:12px">Enviar correo</button>
         <p id="resendCountdown" class="login-sub" style="display:none;font-size:12px;text-align:center;margin-top:8px;color:var(--sub-color)"></p>

@@ -1,51 +1,42 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'crypto';
-import { ICodeService } from './code.service.interface.js';
+import { randomBytes } from 'crypto';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../redis/redis.module.js';
+import type { CodeEntry, ICodeService } from './code.service.interface.js';
 import { UserInfoOauthDto } from '../../auth/dtos/user-info-oauth.dto.js';
 
+const KEY_PREFIX = 'sso:code:';
 
-interface CodeEntry {
-  userInfo: UserInfoOauthDto;
-  clientId: number;
-  expiresAt: number;
-}
-
+/**
+ * Los authorization codes viven en Redis (no en memoria del proceso): sobreviven a un reinicio y
+ * funcionan con más de una instancia del backend. GETDEL hace el canje atómico y de un solo uso.
+ */
 @Injectable()
-export class CodeService implements ICodeService, OnModuleDestroy {
-  private readonly codes = new Map<string, CodeEntry>();
+export class CodeService implements ICodeService {
   private readonly ttlMs: number;
-  private readonly purgeInterval: NodeJS.Timeout;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+  ) {
     this.ttlMs = parseInt(this.configService.getOrThrow<string>('CODE_TTL_MS'), 10);
-    this.purgeInterval = setInterval(() => this.purgeExpired(), 60_000);
   }
 
-  onModuleDestroy(): void {
-    clearInterval(this.purgeInterval);
-  }
-
-  generate(userInfo: UserInfoOauthDto, clientId: number): string {
-    const code = randomUUID();
-    this.codes.set(code, { userInfo, clientId, expiresAt: Date.now() + this.ttlMs });
+  async generate(userInfo: UserInfoOauthDto, clientId: number, redirectUri: string): Promise<string> {
+    const code = randomBytes(32).toString('hex');
+    const entry: CodeEntry = { userInfo, clientId, redirectUri };
+    await this.redis.set(KEY_PREFIX + code, JSON.stringify(entry), 'PX', this.ttlMs);
     return code;
   }
 
-  consume(code: string): { userInfo: UserInfoOauthDto; clientId: number } | null {
-    const entry = this.codes.get(code);
-    this.codes.delete(code);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) return null;
-    return { userInfo: entry.userInfo, clientId: entry.clientId };
-  }
-
-  private purgeExpired(): void {
-    const now = Date.now();
-    for (const [code, entry] of this.codes.entries()) {
-      if (now > entry.expiresAt) {
-        this.codes.delete(code);
-      }
+  async consume(code: string): Promise<CodeEntry | null> {
+    const raw = await this.redis.getdel(KEY_PREFIX + code);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as CodeEntry;
+    } catch {
+      return null;
     }
   }
 }

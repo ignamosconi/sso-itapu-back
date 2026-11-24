@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard.js';
 import { APP_GUARD } from '@nestjs/core';
 
 import { ServeStaticModule } from '@nestjs/serve-static';
@@ -23,9 +24,9 @@ import { StudentModule } from './student/student.module.js';
 import { PasswordResetTokenModule } from './password-reset-token/password-reset-token.module.js';
 import { DomainRoleEntity } from './domain-role/entities/domain-role.entity.js';
 import { SpecialtyEntity } from './specialty/entities/specialty.entity.js';
-import { StudentEntity } from './student/entities/student.entity.js';
+import { StudentEntity } from './student/students/entities/student.entity.js';
 import { PasswordResetTokenEntity } from './password-reset-token/entities/password-reset-token.entity.js';
-import { EmailChangeRequestEntity } from './student/entities/email-change-request.entity.js';
+import { EmailChangeRequestEntity } from './student/email-change/entities/email-change-request.entity.js';
 import { MailModule } from './mail/mail.module.js';
 import { SsoInfoModule } from './sso-info/sso-info.module.js';
 import { StatsModule } from './stats/stats.module.js';
@@ -109,7 +110,7 @@ function positiveInt(config: ConfigService, name: string, fallback: number): num
     AdminSeeder,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: AppThrottlerGuard,
     },
   ],
   

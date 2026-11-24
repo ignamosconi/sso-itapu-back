@@ -1,0 +1,43 @@
+import { Request as ExpressRequest } from 'express';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { UserInfoOauthDto } from '../../auth/dtos/user-info-oauth.dto';
+import { JwtPayloadDto } from '../../auth/dtos/jwt-payload.dto.js';
+
+@Injectable()
+export class JwtGuard implements CanActivate {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<ExpressRequest & { user?: UserInfoOauthDto }>();
+    const authHeader = request.headers['authorization'];
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Token no proporcionado.');
+    }
+
+    const token = authHeader.split(' ')[1];
+    let payload: JwtPayloadDto;
+
+    try {
+      payload = await this.jwtService.verifyAsync<JwtPayloadDto>(token, {
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        algorithms: ['HS256'],
+        issuer: this.configService.getOrThrow<string>('SSO_BASE_URL').replace(/\/+$/, ''),
+      });
+    } catch {
+      throw new UnauthorizedException('Token inválido o expirado.');
+    }
+
+    if (payload.type !== 'access') {
+      throw new UnauthorizedException('Token inválido o expirado.');
+    }
+
+    (request as ExpressRequest & { user: UserInfoOauthDto }).user = payload;
+    return true;
+  }
+}

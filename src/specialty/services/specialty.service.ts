@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import type { ISpecialtyService } from './specialty.service.interface.js';
 import { SpecialtyEntity } from '../entities/specialty.entity.js';
 import { CreateSpecialtyDto } from '../dtos/create-specialty.dto.js';
@@ -28,9 +28,11 @@ export class SpecialtyService implements ISpecialtyService {
   }
 
   async create(dto: CreateSpecialtyDto): Promise<SpecialtyResponseDto> {
-    const exists = await this.repo.findOne({ where: { name: dto.name } });
-    if (exists) throw new ConflictException(`La especialidad "${dto.name}" ya existe.`);
-    return this.toDto(await this.repo.save(this.repo.create({ name: dto.name })));
+    const name = dto.name.trim();
+    // ILIKE sin comodines: compara sin distinguir mayúsculas (N16)
+    const exists = await this.repo.findOne({ where: { name: ILike(name.replace(/[\\%_]/g, '\\$&')) } });
+    if (exists) throw new ConflictException(`La especialidad "${name}" ya existe.`);
+    return this.toDto(await this.repo.save(this.repo.create({ name })));
   }
 
   async remove(id: number): Promise<void> {

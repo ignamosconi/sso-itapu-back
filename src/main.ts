@@ -5,54 +5,22 @@ import type { Request, Response } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import basicAuth from 'express-basic-auth';
 import { AppModule } from './app.module.js';
 import { ConfigService } from '@nestjs/config';
 import { AdminSeeder } from './database/seeders/admin.seeder.js';
+import { assertSecrets, parseTrustProxy } from './config/startup-checks.js';
 
-
-const KNOWN_WEAK_SECRETS = new Set([
-  'cambia_este_secret_acceso',
-  'cambia_este_secret_refresco',
-  'cambia_este_secret_admin_acceso',
-  'cambia_este_secret_admin_refresco',
-  'cambia_esta_password_min_8_caracteres',
-  'cambia_esta_password_swagger',
-  'admin',   // SWAGGER_USER por defecto
-  'cambia_esta_password_redis',
-  
-]);
-
-function assertSecrets(configService: ConfigService): void {
-  const env = configService.get<string>('NODE_ENV') ?? 'development';
-  if (env !== 'production') return;
-
-  const secretsToCheck: string[] = [
-    configService.get<string>('JWT_ACCESS_SECRET') ?? '',
-    configService.get<string>('JWT_REFRESH_SECRET') ?? '',
-    configService.get<string>('JWT_ADMIN_ACCESS_SECRET') ?? '',
-    configService.get<string>('JWT_ADMIN_REFRESH_SECRET') ?? '',
-    configService.get<string>('ADMIN_PASSWORD_SEEDER') ?? '',
-    configService.get<string>('SWAGGER_PASSWORD') ?? '',
-    configService.get<string>('SWAGGER_USER') ?? '',
-    configService.get<string>('REDIS_PASSWORD') ?? '',
-  ];
-
-  for (const secret of secretsToCheck) {
-    if (KNOWN_WEAK_SECRETS.has(secret)) {
-      throw new Error(
-        '[Seguridad] Se detectó un secreto por defecto del .env.example en entorno production. ' +
-        'Rotá todos los secretos JWT, passwords de seeder y credenciales de Swagger antes de desplegar.',
-      );
-    }
-  }
-}
 
 async function bootstrap() {
+  // Red de seguridad: una promesa rechazada sin capturar se registra en vez de tumbar el proceso.
+  process.on('unhandledRejection', (reason) => {
+    new Logger('unhandledRejection').error(reason instanceof Error ? (reason.stack ?? reason.message) : String(reason));
+  });
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.set('trust proxy', 1);
+  app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
   app.use(helmet({
     //Evita que el popup de login y la página de credenciales sean embebidos en iframes de otros orígenes (clickjacking)
@@ -96,7 +64,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // Falla al arrancar si hay secretos por defecto en producción
-  assertSecrets(configService);
+  assertSecrets((key) => configService.get<string>(key));
 
   const port = configService.get<number>('PORT') || 3000;
   const swaggerUser = configService.getOrThrow<string>('SWAGGER_USER');

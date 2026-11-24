@@ -24,8 +24,6 @@
     "migration:revert": "typeorm migration:revert -d dist/database/datasource.js"
   },
   "dependencies": {
-    "@nestjs-modules/mailer": "^2.3.7",
-    "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
@@ -36,24 +34,21 @@
     "@nestjs/swagger": "^11.4.5",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.3",
-    "axios": "^1.18.1",
     "bcrypt": "^6.0.0",
-    "ci": "^2.3.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "dotenv": "^17.4.2",
     "express-basic-auth": "^1.2.1",
     "helmet": "^8.3.0",
     "ioredis": "^5.11.1",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^10.6.1",
     "otplib": "~12.0.1",
     "pg": "^8.22.0",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "swagger-ui-express": "^5.0.1",
     "typeorm": "^1.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -68,10 +63,9 @@
     "@types/mocha": "^10.0.10",
     "@types/multer": "^2.3.0",
     "@types/node": "^24.0.0",
-    "@types/nodemailer": "^8.0.1",
+    "@types/nodemailer": "^8.0.2",
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^7.0.0",
-    "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^10.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
@@ -116,8 +110,10 @@
     "transformIgnorePatterns": [
       "/node_modules/(?!@nestjs/schedule/)"
     ],
-
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "overrides": {
+    "proxy-addr": "^2.0.8"
   }
 }

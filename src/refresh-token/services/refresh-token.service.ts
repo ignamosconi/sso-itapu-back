@@ -7,6 +7,14 @@ import { RefreshTokenEntity } from '../entities/refresh-token.entity.js';
 import { IRefreshTokenService, SaveRefreshTokenParams } from './refresh-token.service.interface.js';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+/**
+ * Ventana en la que un segundo uso del MISMO refresh token no se considera robo (P9).
+ * Cubre dos pestañas / dos requests del mismo cliente que renuevan a la vez: antes la segunda
+ * request revocaba toda la sesión. Dentro de la ventana la segunda se rechaza (401) pero la sesión
+ * sigue viva con el token que emitió la primera. Fuera de la ventana, la reutilización revoca la familia.
+ */
+export const REFRESH_REUSE_GRACE_MS = 10_000;
+
 @Injectable()
 export class RefreshTokenService implements IRefreshTokenService {
 
@@ -54,7 +62,7 @@ export class RefreshTokenService implements IRefreshTokenService {
     const result = await this.repo
       .createQueryBuilder()
       .update(RefreshTokenEntity)
-      .set({ used: true })
+      .set({ used: true, usedAt: new Date() })
       .where('tokenHash = :tokenHash', { tokenHash })
       .andWhere('used = false')
       .andWhere('revoked = false')
@@ -68,6 +76,10 @@ export class RefreshTokenService implements IRefreshTokenService {
       const existing = await this.repo.findOne({ where: { tokenHash } });
 
       if (existing?.used) {
+        // Segundo uso casi simultáneo (carrera legítima): no se revoca la sesión.
+        if (!existing.revoked && existing.usedAt && Date.now() - new Date(existing.usedAt).getTime() <= REFRESH_REUSE_GRACE_MS) {
+          throw new UnauthorizedException('El refresh token ya fue renovado hace instantes. Usá el token más reciente.');
+        }
         // Reutilización detectada → revocar toda la familia
         await this.repo.update({ familyId: existing.familyId }, { revoked: true });
         throw new UnauthorizedException('Refresh token ya utilizado. Sesión revocada por seguridad.');
@@ -97,10 +109,12 @@ export class RefreshTokenService implements IRefreshTokenService {
   }
 
   // Revoca toda la familia (logout)
-  async revokeFamily(token: string): Promise<void> {
+  // Si se pasa clientId, solo revoca cuando el token pertenece a esa app.
+  async revokeFamily(token: string, clientId?: number): Promise<void> {
     const tokenHash = this.hash(token);
     const record = await this.repo.findOne({ where: { tokenHash } });
     if (!record) return;
+    if (clientId !== undefined && record.clientId !== clientId) return;
     await this.repo.update({ familyId: record.familyId }, { revoked: true });
   }
 

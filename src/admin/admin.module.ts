@@ -5,7 +5,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AdminEntity } from './entities/admin.entity.js';
 import { AdminService } from './services/admin.service.js';
 import { AdminController } from './controllers/admin.controller.js';
-import { AdminJwtGuard } from '../auth/guards/admin-jwt.guard.js';
+import { AdminJwtGuard } from '../common/guards/admin-jwt.guard.js';
 import { RefreshTokenModule } from '../refresh-token/refresh-token.module.js';
 
 @Module({

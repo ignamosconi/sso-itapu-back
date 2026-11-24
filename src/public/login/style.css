@@ -212,6 +212,36 @@ body {
   color: var(--input-placeholder);
 }
 
+.password-wrap {
+  position: relative;
+}
+
+.password-wrap .field-input {
+  padding-right: 42px;
+}
+
+.toggle-password {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 40px; /* misma altura aproximada del input; el margin-bottom no cuenta */
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--label-color);
+}
+
+.toggle-password:hover,
+.toggle-password:focus-visible {
+  color: var(--accent-text);
+  outline: none;
+}
+
 .btn-login {
   width: 100%;
   background: var(--accent);

@@ -23,11 +23,21 @@
     document.getElementById('errorBox').classList.remove('visible');
   }
 
+  function setPasswordVisible(visible) {
+    const input = document.getElementById('passwordInput');
+    const btn = document.getElementById('togglePassword');
+    input.type = visible ? 'text' : 'password';
+    document.getElementById('eyeSlash').style.display = visible ? '' : 'none';
+    btn.setAttribute('aria-pressed', String(visible));
+    btn.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  }
+
   function showScreen(id) {
     ['screen-username', 'screen-password', 'screen-check-email', ].forEach(s => {
       document.getElementById(s).style.display = s === id ? '' : 'none';
     });
     hideError();
+    setPasswordVisible(false);
   }
 
   function setLoading(btn, loading) {
@@ -148,6 +158,12 @@
 
   document.getElementById('passwordInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('btnLogin').click();
+  });
+
+  document.getElementById('togglePassword').addEventListener('click', () => {
+    const input = document.getElementById('passwordInput');
+    setPasswordVisible(input.type === 'password');
+    input.focus();
   });
 
   // ── Pantalla de envío de correo (setup y olvidé mi contraseña) ───────────

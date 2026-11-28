@@ -1,0 +1,67 @@
+# Producción: Postgres + Redis + backend. Ningún puerto queda expuesto a Internet:
+# solo el backend escucha en 127.0.0.1:3000, y Caddy (en el host) le hace de proxy.
+# Uso: docker compose -f docker-compose.prod.yml up -d --build
+name: sso-itapu-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:?Definí DB_USERNAME en el .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Definí DB_PASSWORD en el .env}
+      POSTGRES_DB: ${DB_NAME:?Definí DB_NAME en el .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Definí REDIS_PASSWORD en el .env}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: sso-itapu-back:latest
+    restart: unless-stopped
+    # init: reenvía SIGTERM a Node para que se apague limpio en cada down/redeploy.
+    init: true
+    env_file: .env
+    # Pisan lo que diga el .env: dentro de Docker, la base y Redis se llaman por nombre de servicio.
+    environment:
+      TZ: America/Argentina/Buenos_Aires
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:

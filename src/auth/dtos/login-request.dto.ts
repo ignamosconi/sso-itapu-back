@@ -17,7 +17,7 @@ export class LoginRequestDto {
   @MaxLength(512)
   state!: string;
 
-  @ApiProperty({ example: 'immosconi136', description: 'Nombre de usuario del alumno.' })
+  @ApiProperty({ example: 'immosconi456', description: 'Nombre de usuario del alumno.' })
   @IsString()
   @MaxLength(64)
   username!: string;

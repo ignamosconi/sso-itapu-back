@@ -1,6 +1,7 @@
 import { IsString, MinLength, IsOptional, MaxLength, Matches, ValidateIf, IsNotEmpty } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsMaxBytes } from '../../common/validators/max-bytes.validator.js';
+import { IsStrongPassword } from '../../common/validators/password-policy.validator.js';
 
 export class UpdateAdminDto {
   @ApiPropertyOptional({
@@ -19,11 +20,11 @@ export class UpdateAdminDto {
   })
   username?: string;
 
-  @ApiPropertyOptional({ example: 'nueva_password', minLength: 8 })
+  @ApiPropertyOptional({ example: 'Nueva_Password1', minLength: 8, description: 'Mínimo 8 caracteres, con al menos una mayúscula, una minúscula, un número y un caracter especial (cualquier símbolo que no sea letra, número ni espacio). Máximo 72 bytes.' })
   @IsOptional()
   @IsString()
-  @MinLength(8)
   @MaxLength(128)
+  @IsStrongPassword()
   @IsMaxBytes()
   password?: string;
 

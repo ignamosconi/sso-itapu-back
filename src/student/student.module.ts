@@ -15,6 +15,7 @@ import { StudentEmailChangeController } from './email-change/controllers/student
 import { PasswordResetTokenModule } from '../password-reset-token/password-reset-token.module.js';
 import { MailModule } from '../mail/mail.module.js';
 import { JwtModule } from '@nestjs/jwt';
+import { AdminModule } from '../admin/admin.module.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { JwtModule } from '@nestjs/jwt';
     MailModule,
     JwtModule.register({}),
     RefreshTokenModule,
+    AdminModule, // IAdminPasswordConfirmService: confirmación con la contraseña del admin al editar usuarios
   ],
   controllers: [StudentController, StudentEmailChangeController],
   providers: [

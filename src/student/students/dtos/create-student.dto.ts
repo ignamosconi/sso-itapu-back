@@ -1,6 +1,8 @@
 import { IsString, MinLength, MaxLength, Matches, IsEmail, IsInt, Min, Max, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { IsDomainRoleIdList, IsSpecialtyIdList } from './assignment-ids.decorators.js';
+import { MAX_ROLES_PER_USER, MAX_SPECIALTIES_PER_USER } from '../../../domain-role/utils/assignment-rules.js';
 
 const NAME_REGEX = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ ]+$/;
 const NAME_MSG = 'Solo se permiten letras (con tildes) y espacios.';
@@ -24,7 +26,7 @@ export class CreateStudentDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ example: 44244136, description: 'DNI sin puntos.' })
+  @ApiProperty({ example: 30123456, description: 'DNI sin puntos.' })
   @Type(() => Number)
   @IsInt()
   @Min(1000000)
@@ -35,13 +37,27 @@ export class CreateStudentDto {
   @IsDateString()
   birth_date!: string;
 
-  @ApiProperty({ example: 1, description: 'ID del cargo institucional.' })
-  @Type(() => Number)
-  @IsInt() @Min(1) @Max(2147483647)
-  domain_role_id!: number;
+  @ApiProperty({
+    type: [Number],
+    example: [2, 3],
+    minItems: 1,
+    maxItems: MAX_ROLES_PER_USER,
+    description:
+      'IDs de los cargos institucionales (al menos uno, sin repetidos). Si alguno de los cargos tiene la regla ' +
+      '"exclusive", el usuario no puede tener otros cargos (400).',
+  })
+  @IsDomainRoleIdList()
+  domain_role_ids!: number[];
 
-  @ApiProperty({ example: 1, description: 'ID de la especialidad.' })
-  @Type(() => Number)
-  @IsInt() @Min(1) @Max(2147483647)
-  specialty_id!: number;
+  @ApiProperty({
+    type: [Number],
+    example: [1],
+    minItems: 1,
+    maxItems: MAX_SPECIALTIES_PER_USER,
+    description:
+      'IDs de las especialidades (al menos una, sin repetidas). Si alguno de los cargos tiene la regla ' +
+      '"single_specialty", debe haber exactamente una (400).',
+  })
+  @IsSpecialtyIdList()
+  specialty_ids!: number[];
 }

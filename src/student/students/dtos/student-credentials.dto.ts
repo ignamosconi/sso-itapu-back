@@ -7,6 +7,8 @@ export class StudentCredentialsDto {
   last_name!: string;
   password!: string | null;
   account_status!: string;
-  domainRoleName!: string;
-  specialtyName!: string;
+  /** Nombres de los cargos, ordenados alfabéticamente. */
+  domainRoleNames!: string[];
+  /** Nombres de las especialidades, ordenados alfabéticamente. */
+  specialtyNames!: string[];
 }

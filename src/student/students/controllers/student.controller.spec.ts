@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe, ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import request from 'supertest';
@@ -95,5 +95,46 @@ describe('StudentController — límites de requests', () => {
       }
       await request(server()).delete(`/admin/students/${ID}`).send({}).expect(429);
     });
+  });
+});
+describe('StudentController — edición (PATCH)', () => {
+  let app: INestApplication;
+  const server = () => app.getHttpServer() as App;
+  const service = { update: jest.fn().mockResolvedValue({ id: ID }) };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 30 }])],
+      controllers: [StudentController],
+      providers: [{ provide: 'IStudentService', useValue: service }],
+    })
+      .overrideGuard(AdminJwtGuard)
+      .useValue({
+        canActivate: (ctx: ExecutionContext) => {
+          ctx.switchToHttp().getRequest<{ admin: unknown }>().admin = { sub: 'admin-uuid', type: 'access' };
+          return true;
+        },
+      })
+      .compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
+    await app.init();
+  });
+
+  afterEach(() => app.close());
+
+  it('le pasa al servicio el id del admin autenticado (del token, no del body)', async () => {
+    await request(server())
+      .patch(`/admin/students/${ID}`)
+      .send({ domain_role_ids: [1, 2], admin_password: 'pw' })
+      .expect(200);
+    expect(service.update).toHaveBeenCalledWith(ID, { domain_role_ids: [1, 2], admin_password: 'pw' }, 'admin-uuid');
+  });
+
+  it('rechaza el pedido sin contraseña de admin o con un adminId en el body', async () => {
+    await request(server()).patch(`/admin/students/${ID}`).send({ first_name: 'Nacho' }).expect(400);
+    await request(server()).patch(`/admin/students/${ID}`).send({ first_name: 'Nacho', admin_password: 'pw', adminId: 'otro' }).expect(400);
+    expect(service.update).not.toHaveBeenCalled();
   });
 });

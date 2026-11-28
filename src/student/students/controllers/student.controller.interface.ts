@@ -8,12 +8,17 @@ import { StudentFiltersDto } from '../dtos/student-filters.dto.js';
 import { ImportPreviewResultDto } from '../dtos/import-preview-result.dto.js';
 import { ImportConfirmDto, ImportConfirmResultDto } from '../dtos/import-confirm.dto.js';
 import { PasswordLockStatusDto } from '../../password-attempts/dtos/password-lock-status.dto.js';
+import { AdminJwtPayloadDto } from '../../../admin-auth/dtos/admin-jwt-payload.dto.js';
+
+export interface RequestWithAdmin {
+  admin: AdminJwtPayloadDto;
+}
 
 export interface IStudentController {
   findAll(filters: StudentFiltersDto): Promise<{ data: StudentResponseDto[]; total: number }>;
   findOne(id: string): Promise<StudentResponseDto>;
   create(dto: CreateStudentDto): Promise<StudentResponseDto>;
-  update(id: string, dto: UpdateStudentDto): Promise<StudentResponseDto>;
+  update(id: string, dto: UpdateStudentDto, req: RequestWithAdmin): Promise<StudentResponseDto>;
   remove(id: string, dto: DeleteStudentDto): Promise<void>;
   getPasswordLock(id: string): Promise<PasswordLockStatusDto>;
   suspend(id: string): Promise<StudentResponseDto>;

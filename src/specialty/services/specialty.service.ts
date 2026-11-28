@@ -39,7 +39,7 @@ export class SpecialtyService implements ISpecialtyService {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException(`Especialidad con id ${id} no encontrada.`);
     const [result] = await this.repo.manager.query<[{ count: string }]>(
-      `SELECT COUNT(*) FROM students WHERE specialty_id = $1`,
+      `SELECT COUNT(*) FROM student_specialties WHERE specialty_id = $1`,
       [id],
     );
     if (parseInt(result.count, 10) > 0) {

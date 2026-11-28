@@ -1,6 +1,7 @@
 import { IsString, MaxLength, MinLength, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsMaxBytes } from '../../common/validators/max-bytes.validator.js';
+import { IsStrongPassword } from '../../common/validators/password-policy.validator.js';
 
 export class CreateAdminDto {
   @ApiProperty({
@@ -18,10 +19,10 @@ export class CreateAdminDto {
   })
   username!: string;
 
-  @ApiProperty({ example: 'password_segura', minLength: 8 })
+  @ApiProperty({ example: 'Password_Segura1', minLength: 8, description: 'Mínimo 8 caracteres, con al menos una mayúscula, una minúscula, un número y un caracter especial (cualquier símbolo que no sea letra, número ni espacio). Máximo 72 bytes.' })
   @IsString()
-  @MinLength(8)
   @MaxLength(128)
+  @IsStrongPassword()
   @IsMaxBytes()
   password!: string;
 }

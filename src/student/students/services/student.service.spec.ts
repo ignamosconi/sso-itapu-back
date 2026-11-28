@@ -14,11 +14,12 @@ import { DomainRoleEntity } from '../../../domain-role/entities/domain-role.enti
 import { SpecialtyEntity } from '../../../specialty/entities/specialty.entity.js';
 import { OAuthClientEntity } from '../../../oauth-client/entities/oauth-client.entity.js';
 import { HttpException } from '@nestjs/common';
+import * as XLSX from 'xlsx';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeDomainRole(overrides: Partial<DomainRoleEntity> = {}): DomainRoleEntity {
-  return { id: 1, name: 'Alumno', createdAt: new Date(), updatedAt: new Date(), ...overrides };
+  return { id: 1, name: 'Alumno', exclusive: false, singleSpecialty: false, createdAt: new Date(), updatedAt: new Date(), ...overrides };
 }
 
 function makeSpecialty(overrides: Partial<SpecialtyEntity> = {}): SpecialtyEntity {
@@ -30,16 +31,14 @@ function makeStudent(overrides: Partial<StudentEntity> = {}): StudentEntity {
     id: 'student-uuid',
     first_name: 'Ignacio',
     last_name: 'Mosconi',
-    username: 'immosconi136',
+    username: 'immosconi456',
     email: 'alumno@gmail.com',
     password: '$2b$10$hashed',
-    dni: 44244136,
+    dni: 30123456,
     birth_date: new Date('2003-05-15'),
     account_status: AccountStatus.Active,
-    domainRoleId: 1,
-    specialtyId: 1,
-    domainRole: makeDomainRole(),
-    specialty: makeSpecialty(),
+    domainRoles: [makeDomainRole()],
+    specialties: [makeSpecialty()],
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -73,6 +72,7 @@ describe('StudentService', () => {
   let mockOauthClientRepo: jest.Mocked<Record<string, jest.Mock>>;
   let mockRefreshTokenService: jest.Mocked<Record<string, jest.Mock>>;
   let mockPasswordAttempts: jest.Mocked<Record<string, jest.Mock>>;
+  let mockAdminPasswordConfirm: jest.Mocked<Record<string, jest.Mock>>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -125,6 +125,10 @@ describe('StudentService', () => {
       reset: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockAdminPasswordConfirm = {
+      verify: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StudentService,
@@ -136,6 +140,7 @@ describe('StudentService', () => {
         { provide: getRepositoryToken(OAuthClientEntity), useValue: mockOauthClientRepo },
         { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
         { provide: 'IPasswordAttemptsService', useValue: mockPasswordAttempts },
+        { provide: 'IAdminPasswordConfirmService', useValue: mockAdminPasswordConfirm },
         {
           provide: ConfigService,
           useValue: {
@@ -158,6 +163,21 @@ describe('StudentService', () => {
   // ── findAll ─────────────────────────────────────────────────────────────────
 
   describe('findAll', () => {
+    it('filtra por cargo/especialidad con EXISTS (el usuario sigue trayendo TODOS sus cargos)', async () => {
+      const qb = makeQueryBuilder();
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll({ domainRoleId: 2, specialtyId: 5 });
+
+      const calls = qb.andWhere.mock.calls as [string, Record<string, number>][];
+      expect(calls[0][0]).toContain('EXISTS (SELECT 1 FROM student_domain_roles');
+      expect(calls[0][1]).toEqual({ rid: 2 });
+      expect(calls[1][0]).toContain('EXISTS (SELECT 1 FROM student_specialties');
+      expect(calls[1][1]).toEqual({ sid: 5 });
+      expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('s.domainRoles', 'dr');
+      expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('s.specialties', 'sp');
+    });
+
     it('debería retornar lista paginada de alumnos', async () => {
       mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder());
 
@@ -211,11 +231,11 @@ describe('StudentService', () => {
       const qb = makeQueryBuilder();
       mockRepo.createQueryBuilder.mockReturnValue(qb);
   
-      await service.findAll({ search: '44.244' });
+      await service.findAll({ search: '30.123' });
   
       const [sql, params] = qb.andWhere.mock.calls[0];
       expect(sql).toContain('CAST(s.dni AS TEXT) LIKE :d0');
-      expect(params).toEqual({ q0: '%44.244%', d0: '%44244%' });
+      expect(params).toEqual({ q0: '%30.123%', d0: '%30123%' });
     });
   
     it('no debería buscar por DNI si la palabra no tiene dígitos', async () => {
@@ -254,7 +274,7 @@ describe('StudentService', () => {
       await service.findAll({ search: 'lucia', domainRoleId: 1, accountStatus: AccountStatus.Active });
   
       expect(qb.andWhere).toHaveBeenCalledTimes(3);
-      expect(qb.andWhere).toHaveBeenCalledWith('s.domain_role_id = :rid', { rid: 1 });
+      expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('student_domain_roles'), { rid: 1 });
       expect(qb.andWhere).toHaveBeenCalledWith('s.account_status = :st', { st: AccountStatus.Active });
     });
   });
@@ -268,7 +288,7 @@ describe('StudentService', () => {
       const result = await service.findOne('student-uuid');
 
       expect(result.id).toBe('student-uuid');
-      expect(result.username).toBe('immosconi136');
+      expect(result.username).toBe('immosconi456');
       expect(result).not.toHaveProperty('password');
     });
 
@@ -290,10 +310,10 @@ describe('StudentService', () => {
       first_name: 'Ignacio',
       last_name: 'Mosconi',
       email: 'alumno@gmail.com',
-      dni: 44244136,
+      dni: 30123456,
       birth_date: '2003-05-15',
-      domain_role_id: 1,
-      specialty_id: 1,
+      domain_role_ids: [1],
+      specialty_ids: [1],
     };
 
     it('N4: si el SMTP falla, create no tira ni deja una promesa sin capturar', async () => {
@@ -345,28 +365,91 @@ describe('StudentService', () => {
 
     it('debería lanzar NotFoundException si el cargo no existe', async () => {
       mockRepo.findOne.mockResolvedValueOnce(null);
-      mockDomainRoleRepo.findOne.mockResolvedValue(null);
+      mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder({ getOne: jest.fn().mockResolvedValue(null) }));
+      mockDomainRoleRepo.find.mockResolvedValue([]);
 
       await expect(service.create(createDto as never)).rejects.toThrow(NotFoundException);
     });
 
     it('debería lanzar NotFoundException si la especialidad no existe', async () => {
       mockRepo.findOne.mockResolvedValueOnce(null);
-      mockDomainRoleRepo.findOne.mockResolvedValue(makeDomainRole());
-      mockSpecialtyRepo.findOne.mockResolvedValue(null);
+      mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder({ getOne: jest.fn().mockResolvedValue(null) }));
+      mockSpecialtyRepo.find.mockResolvedValue([]);
 
       await expect(service.create(createDto as never)).rejects.toThrow(NotFoundException);
     });
 
+    describe('cargos y especialidades múltiples', () => {
+      const profesor = makeDomainRole({ id: 2, name: 'Profesor' });
+      const preceptor = makeDomainRole({ id: 3, name: 'Preceptor' });
+      const alumno = makeDomainRole({ id: 1, name: 'Alumno', exclusive: true, singleSpecialty: true });
+      const mecanica = makeSpecialty({ id: 1, name: 'Mecánica' });
+      const electronica = makeSpecialty({ id: 2, name: 'Electrónica' });
+
+      beforeEach(() => {
+        mockRepo.findOne.mockResolvedValue(null);
+        mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder({ getOne: jest.fn().mockResolvedValue(null) }));
+        mockRepo.create.mockImplementation((e: unknown) => e);
+        mockRepo.save.mockImplementation((e: unknown) => Promise.resolve({ ...(e as object), id: 'nuevo' }));
+      });
+
+      it('guarda TODOS los cargos y especialidades indicados (ordenados) y no consulta de a uno', async () => {
+        mockDomainRoleRepo.find.mockResolvedValue([profesor, preceptor]);
+        mockSpecialtyRepo.find.mockResolvedValue([mecanica, electronica]);
+        // recarga final
+        mockRepo.findOne
+          .mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(makeStudent({ domainRoles: [profesor, preceptor], specialties: [mecanica, electronica] }));
+
+        const result = await service.create({ ...createDto, domain_role_ids: [2, 3], specialty_ids: [1, 2] });
+
+        const created = mockRepo.create.mock.calls[0][0] as { domainRoles: { id: number }[]; specialties: { id: number }[] };
+        expect(created.domainRoles.map(r => r.id)).toEqual([3, 2]); // Preceptor, Profesor
+        expect(created.specialties.map(sp => sp.id)).toEqual([2, 1]); // Electrónica, Mecánica
+        expect(result.domainRoles.map(r => r.name)).toEqual(['Preceptor', 'Profesor']);
+        expect(result.specialties.map(sp => sp.name)).toEqual(['Electrónica', 'Mecánica']);
+        expect(mockDomainRoleRepo.findOne).not.toHaveBeenCalled();
+      });
+
+      it('rechaza con 400 un cargo que no se combina junto a otro, sin crear nada', async () => {
+        mockDomainRoleRepo.find.mockResolvedValue([alumno, profesor]);
+        mockSpecialtyRepo.find.mockResolvedValue([mecanica]);
+
+        const err = await service.create({ ...createDto, domain_role_ids: [1, 2], specialty_ids: [1] }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          message: ['El cargo "Alumno" no se puede combinar con otros cargos.'],
+        });
+        expect(mockRepo.save).not.toHaveBeenCalled();
+        expect(mockMailService.send).not.toHaveBeenCalled();
+      });
+
+      it('rechaza con 400 dos especialidades si alguno de los cargos exige exactamente una', async () => {
+        const unaSola = makeDomainRole({ id: 4, name: 'Regente', singleSpecialty: true });
+        mockDomainRoleRepo.find.mockResolvedValue([profesor, unaSola]);
+        mockSpecialtyRepo.find.mockResolvedValue([mecanica, electronica]);
+
+        await expect(service.create({ ...createDto, domain_role_ids: [2, 4], specialty_ids: [1, 2] }))
+          .rejects.toThrow(BadRequestException);
+        expect(mockRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('informa todos los ids inexistentes en el 404', async () => {
+        mockDomainRoleRepo.find.mockResolvedValue([profesor]);
+        await expect(service.create({ ...createDto, domain_role_ids: [2, 98, 99], specialty_ids: [1] }))
+          .rejects.toThrow('Cargo(s) con id 98, 99 no encontrado(s).');
+      });
+    });
+
     it('debería agregar sufijo numérico al username si ya existe una colisión', async () => {
-      const existingStudent = makeStudent({ username: 'immosconi136' });
+      const existingStudent = makeStudent({ username: 'immosconi456' });
       mockRepo.findOne
         .mockResolvedValueOnce(null)           // DNI no existe
         .mockResolvedValueOnce(existingStudent) // username base existe (colisión)
         .mockResolvedValueOnce(null)           // username_2 no existe
-        .mockResolvedValueOnce(makeStudent({ username: 'immosconi136_2' })); // reload
-      mockRepo.create.mockReturnValue(makeStudent({ username: 'immosconi136_2', password: null }));
-      mockRepo.save.mockResolvedValue(makeStudent({ username: 'immosconi136_2', password: null }));
+        .mockResolvedValueOnce(makeStudent({ username: 'immosconi456_2' })); // reload
+      mockRepo.create.mockReturnValue(makeStudent({ username: 'immosconi456_2', password: null }));
+      mockRepo.save.mockResolvedValue(makeStudent({ username: 'immosconi456_2', password: null }));
 
       const result = await service.create(createDto);
       expect(result).toBeDefined();
@@ -376,36 +459,124 @@ describe('StudentService', () => {
   // ── update ──────────────────────────────────────────────────────────────────
 
   describe('update', () => {
-    it('debería actualizar los campos del alumno', async () => {
-      const entity = makeStudent();
-      mockRepo.findOne.mockResolvedValue(entity);
-      mockRepo.save.mockResolvedValue({ ...entity, first_name: 'Nacho' });
+    const profesor = makeDomainRole({ id: 2, name: 'Profesor' });
+    const preceptor = makeDomainRole({ id: 3, name: 'Preceptor' });
+    const alumno = makeDomainRole({ id: 1, name: 'Alumno', exclusive: true, singleSpecialty: true });
+    const mecanica = makeSpecialty({ id: 1, name: 'Mecánica' });
+    const electronica = makeSpecialty({ id: 2, name: 'Electrónica' });
+    const pw = { admin_password: 'admin-pass' };
 
-      const result = await service.update('student-uuid', { first_name: 'Nacho' });
+    beforeEach(() => {
+      mockRepo.save.mockImplementation((e: unknown) => Promise.resolve(e));
+    });
+
+    it('debería actualizar los campos del alumno', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+
+      const result = await service.update('student-uuid', { first_name: 'Nacho', ...pw }, 'admin-1');
       expect(result.first_name).toBe('Nacho');
     });
 
-    it('X1: asigna el objeto de la relación (no solo el id) para que TypeORM persista el cambio', async () => {
-      const entity = makeStudent();
-      const role = { id: 7, name: 'Profesor' };
-      const spec = { id: 9, name: 'Electrónica' };
-      mockRepo.findOne.mockResolvedValue(entity);
-      mockDomainRoleRepo.findOne.mockResolvedValue(role);
-      mockSpecialtyRepo.findOne.mockResolvedValue(spec);
-      mockRepo.save.mockImplementation((e: unknown) => Promise.resolve(e));
+    it('verifica la contraseña del admin que edita ANTES de leer o tocar al usuario', async () => {
+      mockAdminPasswordConfirm.verify.mockRejectedValue(new ForbiddenException('Tu contraseña de administrador es incorrecta.'));
 
-      await service.update('student-uuid', { domain_role_id: 7, specialty_id: 9 });
+      await expect(service.update('student-uuid', { first_name: 'Nacho', ...pw }, 'admin-1')).rejects.toThrow(ForbiddenException);
+      expect(mockAdminPasswordConfirm.verify).toHaveBeenCalledWith('admin-1', 'admin-pass');
+      expect(mockRepo.findOne).not.toHaveBeenCalled();
+      expect(mockRepo.save).not.toHaveBeenCalled();
+      expect(mockMailService.send).not.toHaveBeenCalled();
+    });
 
-      const saved = mockRepo.save.mock.calls[0][0];
-      expect(saved.domainRole).toBe(role);
-      expect(saved.domainRoleId).toBe(7);
-      expect(saved.specialty).toBe(spec);
-      expect(saved.specialtyId).toBe(9);
+    it('rechaza con 400 un pedido sin ningún campo a cambiar (sin gastar un intento de contraseña)', async () => {
+      await expect(service.update('student-uuid', { ...pw }, 'admin-1')).rejects.toThrow(BadRequestException);
+      expect(mockAdminPasswordConfirm.verify).not.toHaveBeenCalled();
+    });
+
+    it('rechaza con 400 si los datos enviados son iguales a los actuales y no manda mail', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      await expect(service.update('student-uuid', { first_name: 'Ignacio', ...pw }, 'admin-1'))
+        .rejects.toThrow('No hay cambios');
+      expect(mockRepo.save).not.toHaveBeenCalled();
+      expect(mockMailService.send).not.toHaveBeenCalled();
+    });
+
+    it('reemplaza la lista completa de cargos y especialidades', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockDomainRoleRepo.find.mockResolvedValue([profesor, preceptor]);
+      mockSpecialtyRepo.find.mockResolvedValue([mecanica, electronica]);
+
+      const result = await service.update('student-uuid', { domain_role_ids: [2, 3], specialty_ids: [1, 2], ...pw }, 'admin-1');
+
+      const saved = mockRepo.save.mock.calls[0][0] as StudentEntity;
+      expect(saved.domainRoles).toEqual([preceptor, profesor]);
+      expect(saved.specialties).toEqual([electronica, mecanica]);
+      expect(result.domainRoles.map(r => r.name)).toEqual(['Preceptor', 'Profesor']);
+    });
+
+    it('valida la combinación FINAL: cambiar solo las especialidades respeta la regla de los cargos que conserva', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ domainRoles: [alumno] }));
+      mockDomainRoleRepo.find.mockResolvedValue([alumno]);
+      mockSpecialtyRepo.find.mockResolvedValue([mecanica, electronica]);
+
+      await expect(service.update('student-uuid', { specialty_ids: [1, 2], ...pw }, 'admin-1'))
+        .rejects.toThrow(BadRequestException);
+      expect(mockDomainRoleRepo.find).toHaveBeenCalledWith({ where: { id: expect.anything() } });
+      expect(mockRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rechaza agregar un cargo a alguien que tiene un cargo que no se combina', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ domainRoles: [alumno] }));
+      mockDomainRoleRepo.find.mockResolvedValue([alumno, profesor]);
+      mockSpecialtyRepo.find.mockResolvedValue([mecanica]);
+
+      await expect(service.update('student-uuid', { domain_role_ids: [1, 2], ...pw }, 'admin-1'))
+        .rejects.toThrow(BadRequestException);
+    });
+
+    it('manda un mail al usuario con el antes y el después de lo que cambió', async () => {
+      mockRepo.findOne.mockResolvedValueOnce(makeStudent()).mockResolvedValueOnce(null); // usuario, DNI libre
+      mockDomainRoleRepo.find.mockResolvedValue([profesor, preceptor]);
+      mockSpecialtyRepo.find.mockResolvedValue([mecanica]);
+
+      await service.update('student-uuid', { domain_role_ids: [2, 3], dni: 30123457, ...pw }, 'admin-1');
+      await new Promise(r => setImmediate(r));
+
+      expect(mockMailService.send).toHaveBeenCalledTimes(1);
+      const [to, subject, { html }] = mockMailService.send.mock.calls[0] as [string, string, { html: string }];
+      expect(to).toBe('alumno@gmail.com');
+      expect(subject).toBe('Se modificaron tus datos en ITAPU');
+      expect(html).toContain('Cargos');
+      expect(html).toContain('Alumno');
+      expect(html).toContain('Preceptor, Profesor');
+      expect(html).toContain('30123456');
+      expect(html).toContain('30123457');
+      expect(html).not.toContain('Especialidades'); // no cambiaron
+    });
+
+    it('escapa el HTML de los datos en el mail', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent({ first_name: '<b>x</b>' }));
+      await service.update('student-uuid', { first_name: 'Nacho', ...pw }, 'admin-1');
+      await new Promise(r => setImmediate(r));
+      const { html } = mockMailService.send.mock.calls[0][2] as { html: string };
+      expect(html).not.toContain('<b>x</b>');
+      expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+    });
+
+    it('si el SMTP falla, la edición se guarda igual y no queda una promesa sin capturar', async () => {
+      mockRepo.findOne.mockResolvedValue(makeStudent());
+      mockMailService.send.mockRejectedValue(new Error('SMTP caído'));
+      const unhandled = jest.fn();
+      process.once('unhandledRejection', unhandled);
+
+      await expect(service.update('student-uuid', { last_name: 'Otro', ...pw }, 'admin-1')).resolves.toBeDefined();
+      await new Promise(r => setTimeout(r, 20));
+      expect(unhandled).not.toHaveBeenCalled();
+      process.removeListener('unhandledRejection', unhandled);
     });
 
     it('debería lanzar NotFoundException si el alumno no existe', async () => {
       mockRepo.findOne.mockResolvedValue(null);
-      await expect(service.update('no-existe', { first_name: 'Nacho' }))
+      await expect(service.update('no-existe', { first_name: 'Nacho', ...pw }, 'admin-1'))
         .rejects.toThrow(NotFoundException);
     });
 
@@ -414,23 +585,23 @@ describe('StudentService', () => {
         .mockResolvedValueOnce(makeStudent())           // alumno existe
         .mockResolvedValueOnce(makeStudent({ id: 'otro-uuid' })); // DNI en uso por otro
 
-      await expect(service.update('student-uuid', { dni: 99999999 }))
+      await expect(service.update('student-uuid', { dni: 99999999, ...pw }, 'admin-1'))
         .rejects.toThrow(ConflictException);
     });
 
     it('debería lanzar NotFoundException si el nuevo cargo no existe', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent());
-      mockDomainRoleRepo.findOne.mockResolvedValue(null);
+      mockDomainRoleRepo.find.mockResolvedValue([]);
 
-      await expect(service.update('student-uuid', { domain_role_id: 99 }))
+      await expect(service.update('student-uuid', { domain_role_ids: [99], ...pw }, 'admin-1'))
         .rejects.toThrow(NotFoundException);
     });
 
     it('debería lanzar NotFoundException si la nueva especialidad no existe', async () => {
       mockRepo.findOne.mockResolvedValue(makeStudent());
-      mockSpecialtyRepo.findOne.mockResolvedValue(null);
+      mockSpecialtyRepo.find.mockResolvedValue([]);
 
-      await expect(service.update('student-uuid', { specialty_id: 99 }))
+      await expect(service.update('student-uuid', { specialty_ids: [99], ...pw }, 'admin-1'))
         .rejects.toThrow(NotFoundException);
     });
   });
@@ -741,12 +912,24 @@ describe('StudentService', () => {
       const qb = makeQueryBuilder({ getOne: jest.fn().mockResolvedValue(makeStudent()) });
       mockRepo.createQueryBuilder.mockReturnValue(qb);
 
-      const result = await service.findForAuth('immosconi136');
+      const result = await service.findForAuth('immosconi456');
 
       expect(result).not.toBeNull();
       expect(result!.id).toBe('student-uuid');
-      expect(result!.domainRoleName).toBe('Alumno');
-      expect(result!.specialtyName).toBe('Mecánica');
+      expect(result!.domainRoleNames).toEqual(['Alumno']);
+      expect(result!.specialtyNames).toEqual(['Mecánica']);
+    });
+
+    it('devuelve los nombres de TODOS los cargos y especialidades, ordenados', async () => {
+      const student = makeStudent({
+        domainRoles: [makeDomainRole({ id: 2, name: 'Profesor' }), makeDomainRole({ id: 3, name: 'Preceptor' })],
+        specialties: [makeSpecialty({ id: 1, name: 'Mecánica' }), makeSpecialty({ id: 2, name: 'Electrónica' })],
+      });
+      mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder({ getOne: jest.fn().mockResolvedValue(student) }));
+
+      const result = await service.findForAuth('immosconi456');
+      expect(result!.domainRoleNames).toEqual(['Preceptor', 'Profesor']);
+      expect(result!.specialtyNames).toEqual(['Electrónica', 'Mecánica']);
     });
 
     it('debería retornar null si el alumno no existe', async () => {
@@ -825,14 +1008,14 @@ describe('StudentService', () => {
     it('debería generar token de reset y enviar email al alumno', async () => {
       const student = {
         id: 'student-uuid',
-        username: 'immosconi136',
+        username: 'immosconi456',
         email: 'alumno@gmail.com',
         first_name: 'Ignacio',
         last_name: 'Mosconi',
         password: '$2b$10$hashed',
         account_status: 'active',
-        domainRoleName: 'Alumno',
-        specialtyName: 'Mecánica',
+        domainRoleNames: ['Alumno'],
+        specialtyNames: ['Mecánica'],
       };
 
       await service.sendPasswordResetEmail(student);
@@ -874,7 +1057,7 @@ describe('StudentService', () => {
 
   describe('confirmImport (N5/N6/N10)', () => {
     const row = (first: string, last: string, dni: number, email: string) => ({
-      first_name: first, last_name: last, dni, email, birth_date: '2001-02-03', domainRoleId: 1, specialtyId: 1,
+      first_name: first, last_name: last, dni, email, birth_date: '2001-02-03', domainRoleIds: [1], specialtyIds: [1],
     });
 
     beforeEach(() => {
@@ -915,6 +1098,175 @@ describe('StudentService', () => {
       // findOne se usa solo para chequear username; el resto va por lotes (find / query builder)
       expect(mockRepo.find).toHaveBeenCalledTimes(2); // dnis + recarga con relaciones
       expect(mockRepo.createQueryBuilder).toHaveBeenCalledTimes(1);
+    });
+
+    describe('reglas de los cargos al confirmar (no se confía en la vista previa)', () => {
+      const alumno = makeDomainRole({ id: 1, name: 'Alumno', exclusive: true, singleSpecialty: true });
+      const profesor = makeDomainRole({ id: 2, name: 'Profesor' });
+      const preceptor = makeDomainRole({ id: 3, name: 'Preceptor' });
+
+      beforeEach(() => {
+        mockDomainRoleRepo.find.mockResolvedValue([alumno, profesor, preceptor]);
+        mockSpecialtyRepo.find.mockResolvedValue([makeSpecialty({ id: 1 }), makeSpecialty({ id: 2, name: 'Electrónica' })]);
+      });
+
+      it('importa filas con varios cargos y especialidades válidos', async () => {
+        const result = await service.confirmImport({
+          rows: [{ ...row('Ana', 'Perez', 40000001, 'a@t.local'), domainRoleIds: [2, 3], specialtyIds: [1, 2] }],
+        });
+        expect(result.imported).toBe(1);
+        const created = mockRepo.create.mock.calls[0][0] as { domainRoles: { id: number }[]; specialties: { id: number }[] };
+        expect(created.domainRoles.map(r => r.id)).toEqual([2, 3]);
+        expect(created.specialties.map(sp => sp.id)).toEqual([1, 2]);
+      });
+
+      it('si UNA fila viola una regla, no importa NINGUNA y dice qué fila', async () => {
+        const err = await service.confirmImport({
+          rows: [
+            row('Ana', 'Perez', 40000001, 'a@t.local'),
+            { ...row('Beto', 'Lopez', 40000002, 'b@t.local'), domainRoleIds: [1, 2] },
+          ],
+        }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(BadRequestException);
+        const message = ((err as BadRequestException).getResponse() as { message: string[] }).message;
+        expect(message[1]).toBe('Fila 2: El cargo "Alumno" no se puede combinar con otros cargos.');
+        expect(mockRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rechaza ids de cargos o especialidades inexistentes', async () => {
+        await expect(service.confirmImport({
+          rows: [{ ...row('Ana', 'Perez', 40000001, 'a@t.local'), domainRoleIds: [77] }],
+        })).rejects.toThrow(BadRequestException);
+        expect(mockRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rechaza dos especialidades para un cargo que exige exactamente una', async () => {
+        await expect(service.confirmImport({
+          rows: [{ ...row('Ana', 'Perez', 40000001, 'a@t.local'), domainRoleIds: [1], specialtyIds: [1, 2] }],
+        })).rejects.toThrow(BadRequestException);
+      });
+    });
+  });
+
+  // ── Excel: vista previa ──────────────────────────────────────────────────────
+
+  describe('parseImportPreview (cargos y especialidades múltiples)', () => {
+    const alumno = makeDomainRole({ id: 1, name: 'Alumno', exclusive: true, singleSpecialty: true });
+    const profesor = makeDomainRole({ id: 2, name: 'Profesor' });
+    const preceptor = makeDomainRole({ id: 3, name: 'Preceptor' });
+    const regente = makeDomainRole({ id: 4, name: 'Regente', singleSpecialty: true });
+    const mecanica = makeSpecialty({ id: 1, name: 'Mecánica' });
+    const electronica = makeSpecialty({ id: 2, name: 'Electrónica' });
+    const HEADERS = ['Nombre/s', 'Apellido/s', 'DNI', 'Email', 'Fecha de nacimiento', 'Cargo', 'Especialidad'];
+
+    const xlsx = (rows: unknown[][]): Buffer => {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HEADERS, ...rows]), 'Usuarios');
+      return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Uint8Array);
+    };
+    const r = (dni: number, cargo: string, esp: string) =>
+      ['Ana', 'Perez', dni, `u${dni}@t.local`, '15/05/2003', cargo, esp];
+
+    beforeEach(() => {
+      mockDomainRoleRepo.find.mockResolvedValue([alumno, profesor, preceptor, regente]);
+      mockSpecialtyRepo.find.mockResolvedValue([mecanica, electronica]);
+      mockRepo.find.mockResolvedValue([]);
+      mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder({ getRawMany: jest.fn().mockResolvedValue([]) }));
+    });
+
+    it('acepta varios valores separados por ";" o "," (sin distinguir mayúsculas) y devuelve ids ordenados por nombre', async () => {
+      const result = await service.parseImportPreview(xlsx([
+        r(40000001, 'Profesor; Preceptor', 'mecánica, Electrónica'),
+        r(40000002, 'Alumno', 'Mecánica'),
+      ]));
+      expect(result.valid).toBe(2);
+      expect(result.rows[0].data).toEqual({
+        first_name: 'Ana', last_name: 'Perez', dni: 40000001, email: 'u40000001@t.local', birth_date: '2003-05-15',
+        domainRoleIds: [3, 2], specialtyIds: [2, 1],
+      });
+      expect(result.rows[1].data).toMatchObject({ domainRoleIds: [1], specialtyIds: [1] });
+    });
+
+    it('marca inválida la fila que combina un cargo que no se combina', async () => {
+      const result = await service.parseImportPreview(xlsx([r(40000001, 'Alumno; Profesor', 'Mecánica')]));
+      expect(result.rows[0].valid).toBe(false);
+      expect(result.rows[0].errors).toContain('Reglas del cargo: El cargo "Alumno" no se puede combinar con otros cargos.');
+      expect(result.rows[0].data).toMatchObject({ domain_role: 'Alumno; Profesor', specialty: 'Mecánica' });
+    });
+
+    it('marca inválida la fila con dos especialidades si ALGUNO de sus cargos exige una sola', async () => {
+      const result = await service.parseImportPreview(xlsx([r(40000001, 'Profesor; Regente', 'Mecánica; Electrónica')]));
+      expect(result.rows[0].errors).toContain('Reglas del cargo: El cargo "Regente" exige exactamente una especialidad (se indicaron 2).');
+    });
+
+    it('informa cargos/especialidades inexistentes y repetidos', async () => {
+      const result = await service.parseImportPreview(xlsx([r(40000001, 'Profesor; Inventado; profesor', 'Mecánica; Mecánica')]));
+      expect(result.rows[0].errors).toEqual(expect.arrayContaining([
+        'Cargo: "Inventado" no existe en el sistema.',
+        'Cargo: "profesor" está repetido.',
+        'Especialidad: "Mecánica" está repetida.',
+      ]));
+    });
+
+    it('exige al menos un cargo y una especialidad (celdas con solo separadores)', async () => {
+      const result = await service.parseImportPreview(xlsx([r(40000001, ' ; ', ',')]));
+      expect(result.rows[0].errors).toEqual(expect.arrayContaining([
+        'Cargo: indicá al menos un cargo.',
+        'Especialidad: indicá al menos una especialidad.',
+      ]));
+    });
+
+    it('limita la cantidad de cargos por celda', async () => {
+      const many = Array.from({ length: 11 }, () => 'Profesor').join(';');
+      const result = await service.parseImportPreview(xlsx([r(40000001, many, 'Mecánica')]));
+      expect(result.rows[0].errors).toContain('Cargo: máximo 10 cargos por usuario.');
+    });
+  });
+
+  // ── Excel: archivo de ejemplo ────────────────────────────────────────────────
+
+  describe('generateExampleXlsx', () => {
+    const readSheet = (buf: Buffer) => {
+      const ws = XLSX.read(buf, { type: 'buffer' }).Sheets['Usuarios'];
+      return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' });
+    };
+
+    it('incluye un ejemplo simple y uno múltiple que respetan las reglas reales, y la tabla de reglas', async () => {
+      mockDomainRoleRepo.find.mockResolvedValue([
+        makeDomainRole({ id: 1, name: 'Alumno', exclusive: true, singleSpecialty: true }),
+        makeDomainRole({ id: 2, name: 'Preceptor' }),
+        makeDomainRole({ id: 3, name: 'Profesor' }),
+      ]);
+      mockSpecialtyRepo.find.mockResolvedValue([makeSpecialty({ id: 2, name: 'Electrónica' }), makeSpecialty({ id: 1, name: 'Mecánica' })]);
+
+      const rows = readSheet(await service.generateExampleXlsx());
+
+      expect(rows[0].slice(0, 7)).toEqual(['Nombre/s', 'Apellido/s', 'DNI', 'Email', 'Fecha de nacimiento', 'Cargo', 'Especialidad']);
+      expect(rows[1].slice(5, 7)).toEqual(['Alumno', 'Electrónica']);
+      expect(rows[2].slice(5, 7)).toEqual(['Preceptor; Profesor', 'Electrónica; Mecánica']);
+      // Tabla de reglas: I-K
+      expect(rows[0].slice(8, 11)).toEqual(['Cargos válidos', '¿Se combina con otros cargos?', 'Especialidades permitidas']);
+      expect(rows[1].slice(8, 11)).toEqual(['Alumno', 'No: debe ser el único cargo', 'Exactamente una']);
+      expect(rows[2].slice(8, 11)).toEqual(['Preceptor', 'Sí', 'Una o más']);
+      expect(rows[0][12]).toBe('Especialidades válidas');
+      expect(rows.flat()).toContain('Cómo cargar varios valores');
+    });
+
+    it('el archivo de ejemplo pasa su propia vista previa sin errores', async () => {
+      const roles = [
+        makeDomainRole({ id: 1, name: 'Alumno', exclusive: true, singleSpecialty: true }),
+        makeDomainRole({ id: 2, name: 'Preceptor' }),
+        makeDomainRole({ id: 3, name: 'Profesor' }),
+      ];
+      const specs = [makeSpecialty({ id: 2, name: 'Electrónica' }), makeSpecialty({ id: 1, name: 'Mecánica' })];
+      mockDomainRoleRepo.find.mockResolvedValue(roles);
+      mockSpecialtyRepo.find.mockResolvedValue(specs);
+      mockRepo.find.mockResolvedValue([]);
+      mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder({ getRawMany: jest.fn().mockResolvedValue([]) }));
+
+      const preview = await service.parseImportPreview(await service.generateExampleXlsx());
+      expect(preview.invalid).toBe(0);
+      expect(preview.valid).toBe(3);
     });
   });
 });

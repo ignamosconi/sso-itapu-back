@@ -10,6 +10,8 @@ function makeDomainRole(overrides: Partial<DomainRoleEntity> = {}): DomainRoleEn
   return {
     id: 1,
     name: 'Alumno',
+    exclusive: false,
+    singleSpecialty: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -105,6 +107,28 @@ describe('DomainRoleService', () => {
       expect(result.id).toBe(1);
     });
 
+    it('sin reglas indicadas, el cargo se crea combinable y con una o más especialidades', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      mockRepo.create.mockImplementation((e: object) => ({ ...makeDomainRole(), ...e }));
+      mockRepo.save.mockImplementation((e: unknown) => Promise.resolve(e));
+
+      const result = await service.create({ name: 'Profesor' });
+
+      expect(mockRepo.create).toHaveBeenCalledWith({ name: 'Profesor', exclusive: false, singleSpecialty: false });
+      expect(result).toMatchObject({ exclusive: false, singleSpecialty: false });
+    });
+
+    it('guarda las dos reglas indicadas al crear y las devuelve', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      mockRepo.create.mockImplementation((e: object) => ({ ...makeDomainRole(), ...e }));
+      mockRepo.save.mockImplementation((e: unknown) => Promise.resolve(e));
+
+      const result = await service.create({ name: 'Alumno', exclusive: true, single_specialty: true });
+
+      expect(mockRepo.create).toHaveBeenCalledWith({ name: 'Alumno', exclusive: true, singleSpecialty: true });
+      expect(result).toMatchObject({ name: 'Alumno', exclusive: true, singleSpecialty: true });
+    });
+
     it('debería lanzar ConflictException si el nombre ya existe', async () => {
       mockRepo.findOne.mockResolvedValue(makeDomainRole()); // ya existe
 
@@ -137,6 +161,15 @@ describe('DomainRoleService', () => {
 
       await expect(service.remove(1)).rejects.toThrow(BadRequestException);
       expect(mockRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('cuenta los usuarios en la tabla de asignaciones (un usuario puede tener varios cargos)', async () => {
+      mockRepo.findOne.mockResolvedValue(makeDomainRole());
+      mockRepo.manager.query.mockResolvedValue([{ count: '0' }]);
+      await service.remove(1);
+      expect(mockRepo.manager.query).toHaveBeenCalledWith(
+        'SELECT COUNT(*) FROM student_domain_roles WHERE domain_role_id = $1', [1],
+      );
     });
 
     it('el mensaje de error debería incluir la cantidad de usuarios afectados', async () => {

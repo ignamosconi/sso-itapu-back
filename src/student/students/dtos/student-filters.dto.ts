@@ -8,8 +8,10 @@ export class StudentFiltersDto {
   @IsString()
   @MaxLength(100)
   search?: string;
-  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2147483647) domainRoleId?: number;
-  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2147483647) specialtyId?: number;
+  @ApiPropertyOptional({ description: 'Usuarios que tienen este cargo (entre sus cargos).' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2147483647) domainRoleId?: number;
+  @ApiPropertyOptional({ description: 'Usuarios que tienen esta especialidad (entre sus especialidades).' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(2147483647) specialtyId?: number;
   @ApiPropertyOptional({ enum: ['active', 'suspended', 'pending_registration'] })
   @IsOptional() @IsIn(['active', 'suspended', 'pending_registration'])
   accountStatus?: string;

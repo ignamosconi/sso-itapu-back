@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { AdminEntity } from '../../admin/entities/admin.entity.js';
+import { passwordPolicyErrors, passwordPolicyMessage } from '../../common/validators/password-policy.validator.js';
+import { BCRYPT_MAX_BYTES } from '../../common/validators/max-bytes.validator.js';
 
 @Injectable()
 export class AdminSeeder {
@@ -26,6 +28,16 @@ export class AdminSeeder {
 
     const exists = await this.adminRepository.findOne({ where: { username } });
     if (exists) return;
+
+    // El primer admin también cumple la política de contraseñas (igual que los que se crean desde el panel).
+    const missing = passwordPolicyErrors(password);
+    if (missing.length > 0) {
+      throw new Error(`[Seeder] ADMIN_PASSWORD_SEEDER no cumple la política. ${passwordPolicyMessage(missing)}`);
+    }
+    // bcrypt ignora en silencio lo que pase de 72 bytes: se rechaza, igual que en el panel.
+    if (Buffer.byteLength(password, 'utf8') > BCRYPT_MAX_BYTES) {
+      throw new Error(`[Seeder] ADMIN_PASSWORD_SEEDER no puede superar los ${BCRYPT_MAX_BYTES} bytes.`);
+    }
 
     const hashed = await bcrypt.hash(password, 12);
     await this.adminRepository.save({ username, password: hashed });

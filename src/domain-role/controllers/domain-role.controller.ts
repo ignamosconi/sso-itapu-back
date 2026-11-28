@@ -32,7 +32,14 @@ export class DomainRoleController implements IDomainRoleController {
     return this.service.findOne(id);
   }
 
-  @ApiOperation({ summary: 'Crear un nuevo cargo institucional' })
+  @ApiOperation({
+    summary: 'Crear un nuevo cargo institucional',
+    description:
+      'Las reglas "exclusive" (no se combina con otros cargos) y "single_specialty" (exactamente una especialidad) ' +
+      'se fijan acá y NO se pueden cambiar después: no existe endpoint de edición de cargos y cualquier campo no ' +
+      'documentado se rechaza con 400. Para cambiar una regla hay que eliminar el cargo (solo si no tiene usuarios) ' +
+      'y crearlo de nuevo.',
+  })
   @ApiResponse({ status: 201, type: DomainRoleResponseDto })
   @ApiResponse({ status: 409, description: 'El cargo ya existe' })
   @Post()
@@ -42,7 +49,7 @@ export class DomainRoleController implements IDomainRoleController {
 
   @ApiOperation({
     summary: 'Eliminar un cargo institucional',
-    description: 'No se puede eliminar si hay usuarios asignados a este cargo.',
+    description: 'No se puede eliminar si hay usuarios que tengan este cargo (entre sus cargos).',
   })
   @ApiResponse({ status: 200, description: 'Cargo eliminado' })
   @ApiResponse({ status: 400, description: 'Hay usuarios con este cargo' })

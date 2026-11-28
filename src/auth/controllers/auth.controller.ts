@@ -148,7 +148,7 @@ export class AuthController implements IAuthController {
     description: 'Consume el token de un solo uso y actualiza la contraseña. Activa la cuenta si estaba en pending_registration.',
   })
   @ApiResponse({ status: 204, description: 'Contraseña actualizada' })
-  @ApiResponse({ status: 400, description: 'Las contraseñas no coinciden, o token inválido/expirado/usado' })
+  @ApiResponse({ status: 400, description: 'La contraseña no cumple la política (el mensaje lista todo lo que falta), las contraseñas no coinciden, o token inválido/expirado/usado' })
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @HttpCode(204)
   @Post('set-password')

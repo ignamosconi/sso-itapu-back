@@ -458,4 +458,26 @@ describe('OAuthClientService', () => {
         .rejects.toThrow(NotFoundException);
     });
   });
+
+  describe('sendCredentialsByEmail', () => {
+    it('el mail avisa que las listas de cargos/especialidades cambian y que un usuario puede cambiar de cargo o especialidad', async () => {
+      mockRedis.getdel.mockResolvedValueOnce('plain-secret');
+      mockRepo.findOne.mockResolvedValueOnce({
+        id: 7,
+        clientName: 'App de prueba',
+        redirectUris: ['https://app.example.com/cb'],
+        responsibleUser: { email: 'dev@example.com' },
+      });
+
+      await service.sendCredentialsByEmail(7, 'admin-1');
+
+      const [to, , body] = mockMailService.send.mock.calls[0] as [string, string, { html: string }];
+      expect(to).toBe('dev@example.com');
+      expect(body.html).toContain('http://localhost:3000/sso/info/domain-roles');
+      expect(body.html).toContain('http://localhost:3000/sso/info/specialties');
+      expect(body.html).toContain('Estas listas cambian.');
+      expect(body.html).toContain('Un usuario puede cambiar de cargo o de especialidad.');
+      expect(body.html).toContain('recalculá los permisos con los cargos nuevos');
+    });
+  });
 });

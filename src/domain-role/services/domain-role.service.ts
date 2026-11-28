@@ -14,7 +14,14 @@ export class DomainRoleService implements IDomainRoleService {
   ) {}
 
   private toDto(e: DomainRoleEntity): DomainRoleResponseDto {
-    return { id: e.id, name: e.name, createdAt: e.createdAt, updatedAt: e.updatedAt };
+    return {
+      id: e.id,
+      name: e.name,
+      exclusive: e.exclusive,
+      singleSpecialty: e.singleSpecialty,
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+    };
   }
 
   async findAll(): Promise<DomainRoleResponseDto[]> {
@@ -32,14 +39,18 @@ export class DomainRoleService implements IDomainRoleService {
     // ILIKE sin comodines: compara sin distinguir mayúsculas (N16)
     const exists = await this.repo.findOne({ where: { name: ILike(name.replace(/[\\%_]/g, '\\$&')) } });
     if (exists) throw new ConflictException(`El cargo "${name}" ya existe.`);
-    return this.toDto(await this.repo.save(this.repo.create({ name })));
+    return this.toDto(await this.repo.save(this.repo.create({
+      name,
+      exclusive: dto.exclusive ?? false,
+      singleSpecialty: dto.single_specialty ?? false,
+    })));
   }
 
   async remove(id: number): Promise<void> {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) throw new NotFoundException(`Cargo con id ${id} no encontrado.`);
     const [result] = await this.repo.manager.query<[{ count: string }]>(
-      `SELECT COUNT(*) FROM students WHERE domain_role_id = $1`,
+      `SELECT COUNT(*) FROM student_domain_roles WHERE domain_role_id = $1`,
       [id],
     );
     if (parseInt(result.count, 10) > 0) {

@@ -12,7 +12,11 @@ export interface IStudentService {
   findAll(filters: StudentFiltersDto): Promise<{ data: StudentResponseDto[]; total: number }>;
   findOne(id: string): Promise<StudentResponseDto>;
   create(dto: CreateStudentDto): Promise<StudentResponseDto>;
-  update(id: string, dto: UpdateStudentDto): Promise<StudentResponseDto>;
+  /**
+   * Edita un usuario. `adminId` es el admin autenticado: se le pide su contraseña (dto.admin_password)
+   * y se le avisa por mail al usuario de cada dato que cambió.
+   */
+  update(id: string, dto: UpdateStudentDto, adminId: string): Promise<StudentResponseDto>;
   remove(id: string, dto: DeleteStudentDto): Promise<void>;
   getPasswordLockStatus(id: string): Promise<PasswordLockStatusDto>;
   suspend(id: string): Promise<StudentResponseDto>;

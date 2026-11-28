@@ -43,6 +43,7 @@ export class AdminController implements IAdminController {
 
   @ApiOperation({ summary: 'Crear nuevo administrador' })
   @ApiResponse({ status: 201, type: AdminResponseDto })
+  @ApiResponse({ status: 400, description: 'Datos inválidos. Si la contraseña no cumple la política, el mensaje lista todo lo que le falta.' })
   @ApiResponse({ status: 409, description: 'Username ya en uso' })
   @Post()
   create(@Body() dto: CreateAdminDto): Promise<AdminResponseDto> {
@@ -54,9 +55,10 @@ export class AdminController implements IAdminController {
     description: 'Un admin solo puede editar su propio usuario y contraseña confirmando su contraseña actual.',
   })
   @ApiResponse({ status: 200, type: AdminResponseDto })
-  @ApiResponse({ status: 400, description: 'Datos inválidos o sin cambios' })
-  @ApiResponse({ status: 401, description: 'Contraseña actual incorrecta' })
+  @ApiResponse({ status: 400, description: 'Datos inválidos o sin cambios. Si la contraseña nueva no cumple la política, el mensaje lista todo lo que le falta.' })
+  @ApiResponse({ status: 403, description: 'Contraseña actual incorrecta. Incluye `attemptsRemaining` y `retryAfterSeconds`.' })
   @ApiResponse({ status: 404, description: 'Admin no encontrado' })
+  @ApiResponse({ status: 429, description: 'Demasiados intentos con la contraseña (`code: ADMIN_PASSWORD_ATTEMPTS_LOCKED`). Comparte el contador con la edición de usuarios.' })
   @ApiResponse({ status: 409, description: 'Username ya en uso' })
   @Patch('me')
   updateSelf(@Body() dto: UpdateAdminDto, @Request() req: RequestWithAdmin): Promise<AdminResponseDto> {
@@ -70,7 +72,8 @@ export class AdminController implements IAdminController {
   })
   @ApiResponse({ status: 200, description: 'Cuenta eliminada correctamente.' })
   @ApiResponse({ status: 400, description: 'Último admin — no se puede eliminar.' })
-  @ApiResponse({ status: 401, description: 'Contraseña incorrecta.' })
+  @ApiResponse({ status: 403, description: 'Contraseña incorrecta. Incluye `attemptsRemaining` y `retryAfterSeconds`.' })
+  @ApiResponse({ status: 429, description: 'Demasiados intentos con la contraseña (`code: ADMIN_PASSWORD_ATTEMPTS_LOCKED`).' })
   @Delete('me')
   removeSelf(@Body() dto: DeleteSelfAdminDto, @Request() req: RequestWithAdmin): Promise<void> {
     return this.adminService.removeSelf(req.admin.sub, dto);

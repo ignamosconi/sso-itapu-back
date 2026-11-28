@@ -1,12 +1,12 @@
 import {
-  Injectable, NotFoundException, ConflictException, BadRequestException,
-  UnauthorizedException, Inject,
+  Injectable, NotFoundException, ConflictException, BadRequestException, Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { IAdminService } from './admin.service.interface.js';
 import type { IRefreshTokenService } from '../../refresh-token/services/refresh-token.service.interface.js';
+import type { IAdminPasswordConfirmService } from './admin-password-confirm.service.interface.js';
 import { AdminEntity } from '../entities/admin.entity.js';
 import { CreateAdminDto } from '../dtos/create-admin.dto.js';
 import { DeleteSelfAdminDto } from '../dtos/delete-self-admin.dto.js';
@@ -20,6 +20,10 @@ export class AdminService implements IAdminService {
     private readonly adminRepository: Repository<AdminEntity>,
     @Inject('IRefreshTokenService')
     private readonly refreshTokenService: IRefreshTokenService,
+    // Mismo contador de intentos por admin que la edición de usuarios: si no, estos endpoints servirían
+    // para adivinar la contraseña con una sesión robada y esquivar ese límite.
+    @Inject('IAdminPasswordConfirmService')
+    private readonly adminPasswordConfirm: IAdminPasswordConfirmService,
   ) {}
 
   private toDto(entity: AdminEntity): AdminResponseDto {
@@ -62,10 +66,8 @@ export class AdminService implements IAdminService {
       throw new BadRequestException('Debés ingresar tu contraseña actual para confirmar los cambios.');
     }
 
-    const passwordValid = await bcrypt.compare(dto.currentPassword, admin.password);
-    if (!passwordValid) {
-      throw new UnauthorizedException('La contraseña actual es incorrecta.');
-    }
+    // 403 con attemptsRemaining si es incorrecta; 429 si el admin está bloqueado.
+    await this.adminPasswordConfirm.verify(id, dto.currentPassword);
 
     if (dto.username && dto.username !== admin.username) {
       const exists = await this.adminRepository.findOne({ where: { username: dto.username } });
@@ -84,8 +86,8 @@ export class AdminService implements IAdminService {
     const admin = await this.adminRepository.findOne({ where: { id } });
     if (!admin) throw new NotFoundException(`Admin con id ${id} no encontrado.`);
 
-    const passwordValid = await bcrypt.compare(dto.password, admin.password);
-    if (!passwordValid) throw new UnauthorizedException('La contraseña ingresada es incorrecta.');
+    // Antes de chequear si es el último admin: si no, la respuesta revelaría si la contraseña era correcta.
+    await this.adminPasswordConfirm.verify(id, dto.password);
 
     const total = await this.adminRepository.count();
     if (total <= 1) throw new BadRequestException('No se puede eliminar el último administrador del sistema.');

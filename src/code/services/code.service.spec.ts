@@ -6,10 +6,10 @@ const mockUserInfo: UserInfoOauthDto = {
   sub: '123',
   nombre: 'Juan',
   apellido: 'Pérez',
-  username: 'immosconi136',
-  especialidad: 'Mecánica',
+  username: 'immosconi456',
+  especialidades: ['Mecánica'],
   email: 'alumno@gmail.com',
-  cargo: 'Alumno',
+  cargos: ['Alumno'],
 };
 
 /** Redis mínimo en memoria: SET ... PX y GETDEL (con expiración simulada). */

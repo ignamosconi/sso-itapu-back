@@ -6,7 +6,7 @@ jest.mock('bcrypt', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
-  NotFoundException, ConflictException, BadRequestException, UnauthorizedException,
+  NotFoundException, ConflictException, BadRequestException, ForbiddenException, HttpException, HttpStatus,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AdminService } from './admin.service.js';
@@ -33,6 +33,10 @@ type MockRefreshTokenService = {
   revokeAllForSub: jest.Mock;
 };
 
+type MockAdminPasswordConfirm = {
+  verify: jest.Mock;
+};
+
 function makeAdmin(overrides: Partial<AdminEntity> = {}): AdminEntity {
   return {
     id: 'uuid-1',
@@ -50,6 +54,7 @@ describe('AdminService', () => {
   let service: AdminService;
   let mockRepo: MockRepository;
   let mockRefreshTokenService: MockRefreshTokenService;
+  let mockAdminPasswordConfirm: MockAdminPasswordConfirm;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -70,11 +75,15 @@ describe('AdminService', () => {
       revokeAllForSub: jest.fn(),
     };
 
+    // Por defecto la contraseña es correcta; los tests de contraseña incorrecta lo sobreescriben.
+    mockAdminPasswordConfirm = { verify: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminService,
         { provide: getRepositoryToken(AdminEntity), useValue: mockRepo },
         { provide: 'IRefreshTokenService', useValue: mockRefreshTokenService },
+        { provide: 'IAdminPasswordConfirmService', useValue: mockAdminPasswordConfirm },
       ],
     }).compile();
 
@@ -134,21 +143,41 @@ describe('AdminService', () => {
         .rejects.toThrow(NotFoundException);
     });
 
-    it('debería lanzar UnauthorizedException si la contraseña es incorrecta', async () => {
+    it('debería propagar el 403 del contador si la contraseña es incorrecta, sin borrar nada', async () => {
       mockRepo.findOne.mockResolvedValue(makeAdmin());
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      mockAdminPasswordConfirm.verify.mockRejectedValue(new ForbiddenException({ message: 'Tu contraseña de administrador es incorrecta.', attemptsRemaining: 4 }));
 
       await expect(
         service.removeSelf('uuid-1', {
           password: 'wrong-password',
           confirmationPhrase: 'borrar-mi-cuenta-no-es-reversible',
         }),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAdminPasswordConfirm.verify).toHaveBeenCalledWith('uuid-1', 'wrong-password');
+      expect(mockRepo.manager.transaction).not.toHaveBeenCalled();
+    });
+
+    it('debería verificar la contraseña ANTES de ver si es el último admin (no revela si era correcta)', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAdmin());
+      mockAdminPasswordConfirm.verify.mockRejectedValue(new ForbiddenException({ message: 'Tu contraseña de administrador es incorrecta.', attemptsRemaining: 4 }));
+      mockRepo.count.mockResolvedValue(1);
+
+      await expect(service.removeSelf('uuid-1', validDeleteDto)).rejects.toThrow(ForbiddenException);
+      expect(mockRepo.count).not.toHaveBeenCalled();
+    });
+
+    it('debería propagar el 429 si el admin está bloqueado por intentos', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAdmin());
+      mockAdminPasswordConfirm.verify.mockRejectedValue(
+        new HttpException({ code: 'ADMIN_PASSWORD_ATTEMPTS_LOCKED', retryAfterSeconds: 900 }, HttpStatus.TOO_MANY_REQUESTS),
+      );
+
+      await expect(service.removeSelf('uuid-1', validDeleteDto)).rejects.toMatchObject({ status: 429 });
+      expect(mockRepo.manager.transaction).not.toHaveBeenCalled();
     });
 
     it('debería lanzar BadRequestException si es el último admin', async () => {
       mockRepo.findOne.mockResolvedValue(makeAdmin());
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockRepo.count.mockResolvedValue(1);
 
       await expect(service.removeSelf('uuid-1', validDeleteDto))
@@ -157,7 +186,6 @@ describe('AdminService', () => {
 
     it('debería revocar tokens y eliminar el admin en una transacción', async () => {
       mockRepo.findOne.mockResolvedValue(makeAdmin());
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockRepo.count.mockResolvedValue(2);
 
       mockRepo.manager.transaction.mockImplementation(
@@ -201,23 +229,36 @@ describe('AdminService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('debería lanzar UnauthorizedException si currentPassword es incorrecta', async () => {
+    it('debería propagar el 403 del contador si currentPassword es incorrecta, sin guardar', async () => {
       mockRepo.findOne.mockResolvedValue(makeAdmin());
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+      mockAdminPasswordConfirm.verify.mockRejectedValue(new ForbiddenException({ message: 'Tu contraseña de administrador es incorrecta.', attemptsRemaining: 4 }));
 
       await expect(
         service.updateSelf('uuid-1', {
           username: 'nuevo-username',
           currentPassword: 'incorrecta',
         }),
-      ).rejects.toThrow(UnauthorizedException);
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAdminPasswordConfirm.verify).toHaveBeenCalledWith('uuid-1', 'incorrecta');
+      expect(mockRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('no debería servir para probar contraseñas sin cambiar nada: el mismo username también pasa por el contador', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAdmin());
+      mockAdminPasswordConfirm.verify.mockRejectedValue(
+        new HttpException({ code: 'ADMIN_PASSWORD_ATTEMPTS_LOCKED', retryAfterSeconds: 900 }, HttpStatus.TOO_MANY_REQUESTS),
+      );
+
+      await expect(
+        service.updateSelf('uuid-1', { username: 'admin', currentPassword: 'adivinanza' }),
+      ).rejects.toMatchObject({ status: 429 });
+      expect(mockRepo.save).not.toHaveBeenCalled();
     });
 
     it('debería actualizar el username si currentPassword es correcta', async () => {
       mockRepo.findOne
         .mockResolvedValueOnce(makeAdmin())  // busca el admin por id
         .mockResolvedValueOnce(null);        // username nuevo no existe
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       mockRepo.save.mockResolvedValue(makeAdmin({ username: 'nuevo-username' }));
 
       const result = await service.updateSelf('uuid-1', {
@@ -226,14 +267,13 @@ describe('AdminService', () => {
       });
 
       expect(result.username).toBe('nuevo-username');
-      expect(bcrypt.compare).toHaveBeenCalledWith('password123', '$2b$12$hashedpassword');
+      expect(mockAdminPasswordConfirm.verify).toHaveBeenCalledWith('uuid-1', 'password123');
     });
 
     it('debería lanzar ConflictException si el nuevo username ya está en uso', async () => {
       mockRepo.findOne
         .mockResolvedValueOnce(makeAdmin())
         .mockResolvedValueOnce(makeAdmin({ id: 'uuid-2', username: 'otro-admin' }));
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       await expect(
         service.updateSelf('uuid-1', {
@@ -245,7 +285,6 @@ describe('AdminService', () => {
 
     it('debería cambiar la contraseña si currentPassword es correcta', async () => {
       mockRepo.findOne.mockResolvedValue(makeAdmin());
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       (bcrypt.hash as jest.Mock).mockResolvedValue('$2b$12$nueva');
       mockRepo.save.mockResolvedValue(makeAdmin({ password: '$2b$12$nueva' }));
 

@@ -19,14 +19,14 @@ import { JwtPayloadDto } from '../dtos/jwt-payload.dto.js';
 function makeStudent(overrides: Partial<StudentCredentialsDto> = {}): StudentCredentialsDto {
   return {
     id: 'student-uuid',
-    username: 'immosconi136',
+    username: 'immosconi456',
     email: 'alumno@gmail.com',
     first_name: 'Ignacio',
     last_name: 'Mosconi',
     password: '$2b$10$hashedpassword',
     account_status: 'active',
-    domainRoleName: 'Alumno',
-    specialtyName: 'Mecánica',
+    domainRoleNames: ['Alumno'],
+    specialtyNames: ['Mecánica'],
     ...overrides,
   };
 }
@@ -35,13 +35,13 @@ function makeStudent(overrides: Partial<StudentCredentialsDto> = {}): StudentCre
 function makeStudentDto(overrides: Record<string, unknown> = {}) {
   return {
     id: 'student-uuid',
-    username: 'immosconi136',
+    username: 'immosconi456',
     first_name: 'Ignacio',
     last_name: 'Mosconi',
     email: 'alumno@gmail.com',
     account_status: 'active',
-    domainRole: { id: 1, name: 'Alumno' },
-    specialty: { id: 1, name: 'Mecánica' },
+    domainRoles: [{ id: 1, name: 'Alumno' }],
+    specialties: [{ id: 1, name: 'Mecánica' }],
     ...overrides,
   };
 }
@@ -50,14 +50,14 @@ const userInfo: UserInfoOauthDto = {
   sub: 'student-uuid',
   nombre: 'Ignacio',
   apellido: 'Mosconi',
-  username: 'immosconi136',
-  especialidad: 'Mecánica',
+  username: 'immosconi456',
+  especialidades: ['Mecánica'],
   email: 'alumno@gmail.com',
-  cargo: 'Alumno',
+  cargos: ['Alumno'],
 };
 
 const loginDto = {
-  username: 'immosconi136',
+  username: 'immosconi456',
   password: 'password123',
   client_id: '1',
   redirect_uri: 'https://app.com/callback',
@@ -174,7 +174,7 @@ describe('AuthService', () => {
       const result = await service.validateAndGetUserInfo(loginDto);
 
       expect(result).toEqual(userInfo);
-      expect(mockLoginAttempts.reset).toHaveBeenCalledWith('immosconi136');
+      expect(mockLoginAttempts.reset).toHaveBeenCalledWith('immosconi456');
     });
 
     it('P2: si la cuenta está bloqueada corta antes de tocar la base o bcrypt', async () => {
@@ -196,7 +196,7 @@ describe('AuthService', () => {
       (bcrypt.compare as jest.Mock).mockResolvedValue(compareResult);
 
       await expect(service.validateAndGetUserInfo(loginDto)).rejects.toThrow(GENERIC);
-      expect(mockLoginAttempts.registerFailure).toHaveBeenCalledWith('immosconi136');
+      expect(mockLoginAttempts.registerFailure).toHaveBeenCalledWith('immosconi456');
       expect(mockLoginAttempts.reset).not.toHaveBeenCalled();
     });
 
@@ -220,7 +220,7 @@ describe('AuthService', () => {
   // ── Mails de acceso (P1) ────────────────────────────────────────────────────
 
   describe.each(['requestPasswordReset', 'resendSetupEmail'] as const)('%s', (method) => {
-    const call = (username = 'immosconi136') => service[method]({ username });
+    const call = (username = 'immosconi456') => service[method]({ username });
 
     it('cuenta con contraseña → mail de restauración, cooldown por username (SET NX) y 200 uniforme', async () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
@@ -229,7 +229,7 @@ describe('AuthService', () => {
       await flush();
 
       expect(result).toEqual({ cooldownSeconds: 300 });
-      expect(mockRedis.set).toHaveBeenCalledWith('sso:access-mail-cooldown:immosconi136', '1', 'EX', 300, 'NX');
+      expect(mockRedis.set).toHaveBeenCalledWith('sso:access-mail-cooldown:immosconi456', '1', 'EX', 300, 'NX');
       expect(mockStudentService.sendPasswordResetEmail).toHaveBeenCalledWith(expect.objectContaining({ id: 'student-uuid' }));
     });
 
@@ -296,9 +296,9 @@ describe('AuthService', () => {
 
     it('toma la duración del entorno (ms → segundos, redondeando hacia arriba)', async () => {
       mockStudentService.findForAuth.mockResolvedValue(makeStudent());
-      const result = await build({ PASSWORD_RESET_COOLDOWN_MS: '60500' }).requestPasswordReset({ username: 'immosconi136' });
+      const result = await build({ PASSWORD_RESET_COOLDOWN_MS: '60500' }).requestPasswordReset({ username: 'immosconi456' });
       expect(result.cooldownSeconds).toBe(61);
-      expect(mockRedis.set).toHaveBeenCalledWith('sso:access-mail-cooldown:immosconi136', '1', 'EX', 61, 'NX');
+      expect(mockRedis.set).toHaveBeenCalledWith('sso:access-mail-cooldown:immosconi456', '1', 'EX', 61, 'NX');
     });
 
     it.each([['abc'], ['0'], ['-2'], ['2.5']])('falla al arrancar si el valor es inválido (%s)', (bad) => {
@@ -486,12 +486,15 @@ describe('AuthService', () => {
     });
 
     it('P3: usa los datos ACTUALES del alumno, no los que traía el token viejo', async () => {
-      mockStudentService.findOne.mockResolvedValue(makeStudentDto({ domainRole: { id: 2, name: 'Profesor' } }));
+      mockStudentService.findOne.mockResolvedValue(makeStudentDto({ domainRoles: [{ id: 3, name: 'Preceptor' }, { id: 2, name: 'Profesor' }], specialties: [{ id: 2, name: 'Electrónica' }, { id: 1, name: 'Mecánica' }] }));
 
       await service.refreshTokens(dto);
 
       const payload = (mockJwtService.signAsync as jest.Mock).mock.calls[0][0];
-      expect(payload.cargo).toBe('Profesor');
+      expect(payload.cargos).toEqual(['Preceptor', 'Profesor']);
+      expect(payload.especialidades).toEqual(['Electrónica', 'Mecánica']);
+      expect(payload).not.toHaveProperty('cargo');
+      expect(payload).not.toHaveProperty('especialidad');
     });
 
     it.each([

@@ -10,15 +10,28 @@ export class UserInfoOauthDto {
   @ApiProperty({ example: 'Mosconi' })
   readonly apellido!: string;
 
-  @ApiProperty({ example: 'immosconi136', description: 'Nombre de usuario del SSO.' })
+  @ApiProperty({ example: 'immosconi456', description: 'Nombre de usuario del SSO.' })
   readonly username!: string;
 
-  @ApiProperty({ example: 'Mecánica', description: 'Especialidad del usuario. Ver GET /sso/info/specialties para valores posibles.' })
-  readonly especialidad!: string;
+  @ApiProperty({
+    type: [String],
+    example: ['Electrónica', 'Mecánica'],
+    description:
+      'Especialidades del usuario: siempre al menos una, ordenadas alfabéticamente. ' +
+      'Ver GET /sso/info/specialties para valores posibles. Verificá con includes(), nunca con el primer elemento.',
+  })
+  readonly especialidades!: string[];
 
   @ApiProperty({ example: 'alumno@gmail.com' })
   readonly email!: string;
 
-  @ApiProperty({ example: 'Alumno', description: 'Cargo institucional del usuario. Ver GET /sso/info/domain-roles para valores posibles.' })
-  readonly cargo!: string;
+  @ApiProperty({
+    type: [String],
+    example: ['Preceptor', 'Profesor'],
+    description:
+      'Cargos institucionales del usuario: siempre al menos uno, ordenados alfabéticamente. ' +
+      'Ver GET /sso/info/domain-roles para valores posibles. Para dar permisos verificá si ALGUNO de los cargos ' +
+      'está en tu lista (ej. cargos.includes("Profesor")), nunca con el primer elemento.',
+  })
+  readonly cargos!: string[];
 }

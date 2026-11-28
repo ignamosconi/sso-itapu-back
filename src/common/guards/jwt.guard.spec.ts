@@ -25,7 +25,7 @@ describe('JwtGuard', () => {
   });
 
   it('debería retornar true y poblar request.user con un token válido de tipo access', async () => {
-    const payload = { sub: 'student-uuid', type: 'access', username: 'immosconi136' };
+    const payload = { sub: 'student-uuid', type: 'access', username: 'immosconi456' };
     mockJwtService.verifyAsync.mockResolvedValue(payload);
 
     const ctx = makeContext('Bearer valid-token');

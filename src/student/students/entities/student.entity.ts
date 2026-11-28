@@ -1,6 +1,6 @@
 import {
   Entity, PrimaryGeneratedColumn, Column,
-  CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn,
+  CreateDateColumn, UpdateDateColumn, ManyToMany, JoinTable,
 } from 'typeorm';
 import { DomainRoleEntity } from '../../../domain-role/entities/domain-role.entity.js';
 import { SpecialtyEntity } from '../../../specialty/entities/specialty.entity.js';
@@ -40,19 +40,26 @@ export class StudentEntity {
   @Column({ type: 'date' })
   birth_date!: Date;
 
-  @ManyToOne(() => DomainRoleEntity, { eager: true, nullable: false })
-  @JoinColumn({ name: 'domain_role_id' })
-  domainRole!: DomainRoleEntity;
+  /**
+   * Cargos institucionales del usuario (al menos uno). Las reglas de combinación ("exclusive",
+   * "single_specialty") de cada cargo se validan en el servicio con checkAssignmentRules().
+   */
+  @ManyToMany(() => DomainRoleEntity, { eager: true })
+  @JoinTable({
+    name: 'student_domain_roles',
+    joinColumn: { name: 'student_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'domain_role_id', referencedColumnName: 'id' },
+  })
+  domainRoles!: DomainRoleEntity[];
 
-  @Column({ name: 'domain_role_id' })
-  domainRoleId!: number;
-
-  @ManyToOne(() => SpecialtyEntity, { eager: true, nullable: false })
-  @JoinColumn({ name: 'specialty_id' })
-  specialty!: SpecialtyEntity;
-
-  @Column({ name: 'specialty_id' })
-  specialtyId!: number;
+  /** Especialidades del usuario (al menos una). */
+  @ManyToMany(() => SpecialtyEntity, { eager: true })
+  @JoinTable({
+    name: 'student_specialties',
+    joinColumn: { name: 'student_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'specialty_id', referencedColumnName: 'id' },
+  })
+  specialties!: SpecialtyEntity[];
 
   @Column({ type: 'enum', enum: AccountStatus, default: AccountStatus.PendingRegistration })
   account_status!: AccountStatus;

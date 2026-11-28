@@ -52,13 +52,15 @@ Antes de empezar, consultá estos endpoints para no hardcodear valores en tu có
 
 ```http
 GET https://sso.itapu.edu.ar/sso/info/domain-roles
-→ ["Alumno", "Profesor", "Autoridad", "No Docente"]   // valores posibles del campo "cargo" en /sso/me
+→ ["Alumno", "Profesor", "Autoridad", "No Docente"]   // valores posibles de cada elemento de "cargos" en /sso/me
 
 GET https://sso.itapu.edu.ar/sso/info/specialties
-→ ["Química", "Mecánica", ...]              // valores posibles del campo "especialidad" en /sso/me
+→ ["Química", "Mecánica", ...]              // valores posibles de cada elemento de "especialidades" en /sso/me
 ```
 
 No hardcodees estos valores. Si el administrador agrega o renombra un cargo o especialidad, tu app lo refleja sin cambios de código.
+
+> **Un usuario puede tener varios cargos y varias especialidades** (por ejemplo, alguien que es Profesor y Preceptor, o un profesor de Mecánica y Electrónica). Por eso `/sso/me` devuelve **listas**: `cargos` y `especialidades`. Para dar un permiso, verificá si **alguno** de los cargos del usuario está en tu lista (`cargos.includes("Profesor")`), nunca solo el primero.
 
 
 ### 3. Flujo de autenticación
@@ -159,10 +161,10 @@ Respuesta:
   "sub": "uuid-del-usuario",
   "nombre": "Ignacio Mariano",
   "apellido": "Mosconi",
-  "username": "immosconi136",
-  "especialidad": "Mecánica",
+  "username": "immosconi456",
+  "especialidades": ["Electrónica", "Mecánica"],
   "email": "usuario@gmail.com",
-  "cargo": "Alumno",
+  "cargos": ["Preceptor", "Profesor"],
   "aud": "TU_CLIENT_ID"
 }
 ```
@@ -171,8 +173,17 @@ Respuesta:
 |-------|-------------|
 | `sub` | Identificador único del usuario (UUID). Usalo como clave en tu sistema — no cambia nunca. |
 | `username` | Nombre de usuario del SSO. |
-| `especialidad` | Especialidad del usuario. Valores posibles: `GET /sso/info/specialties`. |
-| `cargo` | Cargo institucional. Valores posibles: `GET /sso/info/domain-roles`. |
+| `especialidades` | Lista de especialidades del usuario: **siempre al menos una**, ordenadas alfabéticamente. Valores posibles: `GET /sso/info/specialties`. |
+| `cargos` | Lista de cargos institucionales: **siempre al menos uno**, ordenados alfabéticamente. Valores posibles: `GET /sso/info/domain-roles`. |
+
+Ejemplo para dar permisos de administración en tu app (la lista de cargos con permisos va en tu configuración, no fija en el código):
+
+```js
+const STAFF_CARGOS = process.env.STAFF_CARGOS.split(',');          // ej. "Profesor,Preceptor"
+const esStaff = me.cargos.some((c) => STAFF_CARGOS.includes(c));   // alcanza con que tenga UNO
+```
+
+> **Cambio incompatible en v2.0.0:** los campos `cargo` y `especialidad` (texto) se reemplazaron por `cargos` y `especialidades` (listas). Una app que lea `cargo` recibe `undefined`.
 | `aud` | Tu `client_id`: la aplicación para la que se emitió el token. |
 
 #### Paso 5 — Renovar el access token
@@ -193,7 +204,7 @@ Content-Type: application/json
 Respuesta: nuevos `access_token` y `refresh_token`. Reemplazá ambos — el refresh token anterior queda inválido (rotación automática).
 
 - Un refresh token solo se puede renovar con las credenciales de **la aplicación que lo originó**.
-- Cada renovación vuelve a leer al alumno: el nuevo token trae su **cargo, especialidad, nombre y email actuales**. Si el alumno fue **suspendido o eliminado**, responde `401` y la sesión se revoca.
+- Cada renovación vuelve a leer al alumno: el nuevo token trae sus **cargos, especialidades, nombre y email actuales**. Si un administrador le cambió cargos o especialidades, tu app lo ve en la próxima renovación (como máximo 15 minutos) o en el próximo login. Si el alumno fue **suspendido o eliminado**, responde `401` y la sesión se revoca.
 - Si intentás usar un refresh token ya usado, el servidor revoca toda la sesión y el usuario tendrá que volver a loguearse. **Excepción:** si el segundo uso llega a los pocos segundos del primero (dos pestañas o dos pedidos simultáneos), solo se rechaza ese pedido con `401` y la sesión sigue viva con el token más nuevo. Serializá las renovaciones en tu backend para evitarlo.
 
 > Aplica a las sesiones nuevas. Un refresh token emitido antes de esta versión sigue funcionando, pero ahora también hay que enviar `client_id` y `client_secret`.
@@ -266,6 +277,8 @@ cp .env.example .env
 | `PASSWORD_RESET_COOLDOWN_MS` | Cuántos ms (5 min por defecto) el usuario debe esperar para reenviar el correo de "olvidé mi contraseña". | `300000` |
 | `STUDENT_PASSWORD_MAX_ATTEMPTS` | Intentos de contraseña por alumno antes de bloquear la baja. | `5` |
 | `STUDENT_PASSWORD_LOCK_TTL_MS` | Duración de la ventana de conteo y del bloqueo, en ms. | `900000` |
+| `ADMIN_CONFIRM_PASSWORD_MAX_ATTEMPTS` | Intentos de la contraseña del **admin** antes de bloquear a ese admin. Un solo contador por admin, compartido entre editar un usuario del padrón, cambiar usuario/contraseña en **Mi perfil** (`PATCH /admin/admins/me`) y borrar la propia cuenta (`DELETE /admin/admins/me`). | `5` |
+| `ADMIN_CONFIRM_PASSWORD_LOCK_TTL_MS` | Duración de la ventana de conteo y del bloqueo anterior, en ms. | `900000` |
 | `STUDENT_DELETE_THROTTLE_LIMIT` | Máximo de requests de baja de alumnos por IP en la ventana. | `10` |
 | `STUDENT_DELETE_THROTTLE_TTL_MS` | Ventana del límite anterior, en ms. | `60000` |
 | `EMAIL_CHANGE_TOKEN_TTL_MS` | Vencimiento del link de confirmación de cambio de email, en ms. | `3600000` |
@@ -291,7 +304,7 @@ cp .env.example .env
 | `JWT_ADMIN_ACCESS_EXPIRES_IN` | Expiración del access token de admins. | `15m` |
 | `JWT_ADMIN_REFRESH_EXPIRES_IN` | Expiración del refresh token de admins. | `1d` |
 | `ADMIN_USERNAME_SEEDER` | Username del primer admin (solo en desarrollo). | `admin` |
-| `ADMIN_PASSWORD_SEEDER` | Password del primer admin. Mínimo 8 caracteres. | — |
+| `ADMIN_PASSWORD_SEEDER` | Password del primer admin. Tiene que cumplir la política de contraseñas (mínimo 8 caracteres, con mayúscula, minúscula, número y caracter especial); si no, el seeder corta el arranque. Solo se usa si ese admin todavía no existe. | — |
 | `SWAGGER_USER` | Usuario para la documentación Swagger. | `admin` |
 | `SWAGGER_PASSWORD` | Password para la documentación Swagger. | — |
 | `MAIL_HOST` | Host SMTP. | `smtp.gmail.com` |
@@ -302,7 +315,7 @@ cp .env.example .env
 | `ALLOW_LOCALHOST_REDIRECTS` | Permitir redirect URIs a `localhost`/`127.0.0.1`/`[::1]` también con `NODE_ENV=production`. Por defecto `false`. | `false` |
 | `MAIL_REQUIRE_TLS` | Exigir STARTTLS/TLS al enviar. Por defecto `true` en `production` y `false` en desarrollo (para un SMTP local sin TLS). | `true` |
 
-> **En producción** el servidor **no arranca** si: algún secret (incluida `DB_PASSWORD`) es un valor por defecto del `.env.example`, algún secret JWT tiene menos de 64 caracteres, o dos de los cuatro secrets JWT son iguales. Con `LOGIN_*`, `STUDENT_*` y `PASSWORD_RESET_COOLDOWN_MS` inválidos tampoco arranca.
+> **En producción** el servidor **no arranca** si: algún secret (incluida `DB_PASSWORD`) es un valor por defecto del `.env.example`, algún secret JWT tiene menos de 64 caracteres, o dos de los cuatro secrets JWT son iguales. Con `LOGIN_*`, `STUDENT_*`, `ADMIN_CONFIRM_PASSWORD_*` y `PASSWORD_RESET_COOLDOWN_MS` inválidos tampoco arranca.
 
 Generá las claves hex con:
 ```bash
@@ -317,6 +330,8 @@ npm run start:dev           # las migraciones corren automáticamente
 ```
 
 > **Migraciones nuevas de la auditoría:** `case-insensitive-unique` crea índices únicos sobre `lower(email)` de alumnos y `lower(nombre)` de cargos y especialidades. Si ya existen valores que solo difieren en mayúsculas, **la migración aborta con la lista de duplicados**: corregilos y volvé a arrancar. `refresh-token-used-at` agrega la columna `usedAt` (ventana de tolerancia de refresh simultáneos).
+
+> **Migración de v2.0.0 (`multiple-roles-specialties`):** crea las tablas `student_domain_roles` y `student_specialties` (un usuario puede tener varios cargos y varias especialidades), copia a ellas el cargo y la especialidad que cada usuario tenía y borra las columnas `students.domain_role_id` y `students.specialty_id`. Agrega a `domain_roles` las reglas `exclusive` y `single_specialty` (en `false` para los cargos existentes). Hacé un `pg_dump` antes de desplegar. El `down()` existe pero pierde información: cada usuario conserva un solo cargo y una sola especialidad.
 
 Para generar una nueva migración tras modificar entidades:
 
@@ -345,6 +360,22 @@ npm run lint         # lint
 http://localhost:3000/docs
 
 Requiere `SWAGGER_USER` / `SWAGGER_PASSWORD` del `.env`.
+
+
+## Política de contraseñas
+
+Toda contraseña **nueva** (de alumnos y de admins) tiene que tener:
+
+- al menos 8 caracteres (y como máximo 72 bytes, el límite de bcrypt);
+- una letra mayúscula y una minúscula (se aceptan tildes y ñ);
+- un número;
+- un caracter especial: cualquier símbolo que no sea letra, número ni espacio (`! # $ % _ -`, etc.).
+
+Se exige en todos los lugares donde se elige una contraseña: `POST /sso/set-password` (primera vez y "olvidé mi contraseña" del alumno), `POST /admin/admins` (alta de admin), `PATCH /admin/admins/me` ("Mi perfil") y el seeder del primer admin. Si no se cumple, la API responde `400` con **un solo mensaje que lista todo lo que falta** (por ejemplo: «La contraseña no es segura. Le falta: una letra mayúscula, un número.»), y el panel muestra la misma lista mientras se escribe.
+
+Los campos que solo **verifican** una contraseña existente (login, confirmación con la contraseña del admin, baja o cambio de email del alumno) no aplican la política: las cuentas creadas antes siguen entrando y la política se les exige recién cuando cambian la contraseña.
+
+La regla vive en `src/common/validators/password-policy.validator.ts` y está duplicada en el panel (`src/utils/passwordPolicy.ts`): si se cambia, hay que cambiarla en los dos.
 
 
 ## Protección contra fuerza bruta en la baja de alumnos
@@ -379,6 +410,39 @@ Tres capas independientes:
 - `/sso/token`, `/sso/refresh` y `/sso/logout` se limitan por **(`client_id` + IP)**, no solo por IP: varias aplicaciones, o varios alumnos entrando a la vez desde el servidor de una aplicación, no se pisan entre sí.
 - Las rutas `/admin/*` (ya autenticadas) tienen un límite de 300 requests por minuto por IP.
 
+## Cargos, especialidades y sus reglas
+
+Cada usuario tiene **uno o más cargos** y **una o más especialidades**. Al crear un cargo, el administrador define dos reglas:
+
+| Regla (API) | En el panel | Qué significa |
+|---|---|---|
+| `exclusive` | "No se combina con otros cargos" | Si un usuario tiene este cargo, no puede tener ningún otro. |
+| `single_specialty` | "Exactamente una especialidad" | Si un usuario tiene este cargo (aunque tenga otros), debe tener exactamente una especialidad. |
+
+- **Se aplican si ALGUNO de los cargos del usuario las tiene.** Ejemplo: Profesor (libre) + Regente (`single_specialty`) → el usuario debe tener una sola especialidad.
+- **Son fijas:** se definen al crear el cargo y no hay forma de cambiarlas (no existe endpoint de edición de cargos; un campo extra en el request se rechaza con `400`). Para cambiar una regla hay que eliminar el cargo, cosa que solo se puede hacer si nadie lo tiene asignado, y volver a crearlo. **Definí bien las reglas antes de cargar usuarios reales.**
+- **Se validan en el backend en todos los puntos de entrada**, con una única función (`src/domain-role/utils/assignment-rules.ts`): alta individual, vista previa del Excel, confirmación del Excel (vuelve a validar todo, no confía en la vista previa) y edición.
+- Mensajes de error (`400`, en `message` como lista):
+  - `El cargo "Alumno" no se puede combinar con otros cargos.`
+  - `El cargo "Regente" exige exactamente una especialidad (se indicaron 2).`
+  - `Indicá al menos un cargo.` / `Indicá al menos una especialidad.` / `Hay cargos repetidos.`
+- Límites técnicos: hasta 10 cargos y 20 especialidades por usuario.
+
+### Carga masiva por Excel
+
+- Las columnas **Cargo** y **Especialidad** aceptan varios valores en la misma celda, separados por punto y coma (también se acepta coma): `Profesor; Preceptor`.
+- El Excel de ejemplo (`GET /admin/students/import/example`) trae filas de ejemplo con un cargo y con varios, y al costado una tabla con cada cargo válido, si se combina con otros y cuántas especialidades admite, más la lista de especialidades válidas.
+- En la vista previa cada fila se marca inválida si un cargo o especialidad no existe, está repetido o viola las reglas. En la confirmación, si alguna fila viola las reglas no se importa ninguna.
+
+### Edición de un usuario
+
+`PATCH /admin/students/:id` permite cambiar nombre, apellido, DNI, fecha de nacimiento, cargos y especialidades (las listas se reemplazan completas). El email y la contraseña tienen sus propios flujos; el nombre de usuario y el `sub` no cambian.
+
+- **Confirmación obligatoria con la contraseña del admin** que hace el cambio (`admin_password`). Contraseña incorrecta → `403` con `attemptsRemaining`; al superar `ADMIN_CONFIRM_PASSWORD_MAX_ATTEMPTS` → `429` (`code: ADMIN_PASSWORD_ATTEMPTS_LOCKED`) durante `ADMIN_CONFIRM_PASSWORD_LOCK_TTL_MS`. Así, una sesión de admin robada no alcanza para cambiar permisos.
+- Se valida la combinación **final** de cargos y especialidades con las reglas de arriba.
+- **El usuario recibe un mail** ("Se modificaron tus datos en ITAPU") con el antes y el después de cada dato que cambió, para que pueda avisar si no lo reconoce.
+- Las apps ven los cambios en la próxima renovación del token (como máximo `JWT_ACCESS_EXPIRES_IN`, 15 minutos) o en el próximo login. Hasta entonces, `/sso/me` con un access token anterior devuelve los datos viejos.
+
 ## Cambio de email de alumnos
 
 Solo alumnos **activos**. Es un proceso de dos pasos:
@@ -401,8 +465,8 @@ Permite:
 
 - Iniciar sesión con 2FA obligatorio (TOTP).
 - Gestionar administradores del sistema.
-- Gestionar el padrón de usuarios: alta individual, carga masiva por Excel, edición, suspensión, baja y reenvío de email de bienvenida.
-- Configurar cargos institucionales y especialidades.
+- Gestionar el padrón de usuarios: alta individual, carga masiva por Excel, edición (con la contraseña del admin), suspensión, baja y reenvío de email de bienvenida. Cada usuario puede tener varios cargos y varias especialidades.
+- Configurar cargos institucionales (con sus reglas) y especialidades.
 - Registrar y gestionar aplicaciones cliente OAuth.
 - Regenerar client secrets y enviarlos por email con un link de un solo uso.
 - Ver estadísticas del sistema en el dashboard.
@@ -432,8 +496,9 @@ src/
 │   │   └── controllers · services · dtos · entities
 │   ├── email-change/            Cambio de email de un alumno
 │   └── password-attempts/       Contador de intentos de contraseña (baja y cambio de email)
-├── admin/ · admin-auth/         Administradores y su login con 2FA
-├── domain-role/ · specialty/    Cargos y especialidades
+├── admin/ · admin-auth/         Administradores, su login con 2FA y la confirmación con contraseña para editar usuarios
+├── domain-role/ · specialty/    Cargos (con sus reglas) y especialidades
+│   └── domain-role/utils/       assignment-rules.ts: ÚNICA función que valida las reglas de asignación
 ├── sso-info/ · stats/           Endpoints públicos de referencia y estadísticas
 ├── mail/ · redis/               Envío de correo y conexión a Redis
 ├── database/                    Migraciones y seeder

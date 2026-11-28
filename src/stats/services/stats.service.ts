@@ -23,8 +23,10 @@ export class StatsService implements IStatsService {
       this.studentRepo
         .createQueryBuilder('s')
         .select('sp.name', 'specialty')
+        // Con especialidades múltiples, un usuario cuenta en CADA una de sus especialidades:
+        // la suma de este gráfico puede superar el total de usuarios.
         .addSelect('CAST(COUNT(s.id) AS INTEGER)', 'count')
-        .innerJoin('s.specialty', 'sp')
+        .innerJoin('s.specialties', 'sp')
         //.where('s.account_status = :status', { status: AccountStatus.Active })    //Usar este para mostrar solo activos.
         .where('s.account_status != :status', { status: AccountStatus.Suspended })
         .groupBy('sp.name')

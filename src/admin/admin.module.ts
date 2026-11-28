@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { AdminEntity } from './entities/admin.entity.js';
 import { AdminService } from './services/admin.service.js';
+import { AdminPasswordConfirmService } from './services/admin-password-confirm.service.js';
 import { AdminController } from './controllers/admin.controller.js';
 import { AdminJwtGuard } from '../common/guards/admin-jwt.guard.js';
 import { RefreshTokenModule } from '../refresh-token/refresh-token.module.js';
@@ -21,7 +22,11 @@ import { RefreshTokenModule } from '../refresh-token/refresh-token.module.js';
       provide: 'IAdminService',
       useClass: AdminService,
     },
+    // Confirmación con la contraseña del admin para operaciones sensibles (editar usuarios del padrón).
+    // RedisModule es @Global(), por eso no hace falta importarlo acá.
+    { provide: 'IAdminPasswordConfirmService', useClass: AdminPasswordConfirmService },
     AdminJwtGuard,
   ],
+  exports: ['IAdminPasswordConfirmService'],
 })
 export class AdminModule {}

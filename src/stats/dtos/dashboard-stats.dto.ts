@@ -9,5 +9,11 @@ export class DashboardStatsDto {
   @ApiProperty() oauthClientCount!: number;
   @ApiProperty() studentCount!: number;
   @ApiProperty() pendingRegistrationCount!: number;
-  @ApiProperty({ type: [SpecialtyCountDto] }) studentsBySpecialty!: SpecialtyCountDto[];
+  @ApiProperty({
+    type: [SpecialtyCountDto],
+    description:
+      'Usuarios no suspendidos por especialidad. Un usuario con varias especialidades cuenta en cada una, ' +
+      'así que la suma puede superar studentCount.',
+  })
+  studentsBySpecialty!: SpecialtyCountDto[];
 }

@@ -17,9 +17,9 @@ export class SsoInfoController implements ISsoInfoController {
   @ApiOperation({
     summary: 'Listar cargos institucionales disponibles',
     description:
-      'Devuelve los valores posibles del campo `cargo` en la respuesta de `/sso/me`. ' +
-      'Endpoint público — no requiere autenticación. ' +
-      'Usalo para validar cargos en tu app o para mostrarlos en una UI de selección.',
+      'Devuelve los valores posibles de cada elemento del array `cargos` en la respuesta de `/sso/me`. ' +
+      'Un usuario puede tener varios cargos. Endpoint público — no requiere autenticación. ' +
+      'Usalo para validar en tu app los cargos que configures (ej. qué cargos dan permisos de administración).',
   })
   @ApiResponse({ status: 200, schema: { example: ['Alumno', 'Profesor', 'Autoridad', 'No Docente'] } })
   @Get('domain-roles')
@@ -31,8 +31,8 @@ export class SsoInfoController implements ISsoInfoController {
   @ApiOperation({
     summary: 'Listar especialidades disponibles',
     description:
-      'Devuelve los valores posibles del campo `especialidad` en la respuesta de `/sso/me`. ' +
-      'Endpoint público — no requiere autenticación.',
+      'Devuelve los valores posibles de cada elemento del array `especialidades` en la respuesta de `/sso/me`. ' +
+      'Un usuario puede tener varias especialidades. Endpoint público — no requiere autenticación.',
   })
   @ApiResponse({ status: 200, schema: { example: ['Programación', 'Mecánica', 'Química'] } })
   @Get('specialties')

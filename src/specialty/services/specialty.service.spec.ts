@@ -139,6 +139,15 @@ describe('SpecialtyService', () => {
       expect(mockRepo.remove).not.toHaveBeenCalled();
     });
 
+    it('cuenta los usuarios en la tabla de asignaciones (un usuario puede tener varias especialidades)', async () => {
+      mockRepo.findOne.mockResolvedValue(makeSpecialty());
+      mockRepo.manager.query.mockResolvedValue([{ count: '0' }]);
+      await service.remove(1);
+      expect(mockRepo.manager.query).toHaveBeenCalledWith(
+        'SELECT COUNT(*) FROM student_specialties WHERE specialty_id = $1', [1],
+      );
+    });
+
     it('el mensaje de error debería incluir la cantidad de usuarios afectados', async () => {
       mockRepo.findOne.mockResolvedValue(makeSpecialty());
       mockRepo.manager.query.mockResolvedValue([{ count: '8' }]);

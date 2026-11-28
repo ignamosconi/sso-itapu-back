@@ -3,7 +3,7 @@ import { AdminThrottle } from '../../../common/decorators/admin-throttle.decorat
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Inject,
   UseGuards, ParseUUIDPipe, Query, UseInterceptors, UploadedFile,
-  BadRequestException, Res, HttpCode,
+  BadRequestException, Res, HttpCode, Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -11,7 +11,7 @@ import {
   ApiBearerAuth, ApiOperation, ApiResponse, ApiTags,
   ApiConsumes, ApiBody,
 } from '@nestjs/swagger';
-import type { IStudentController } from './student.controller.interface.js';
+import type { IStudentController, RequestWithAdmin } from './student.controller.interface.js';
 import type { IStudentService } from '../services/student.service.interface.js';
 import { CreateStudentDto } from '../dtos/create-student.dto.js';
 import { UpdateStudentDto } from '../dtos/update-student.dto.js';
@@ -57,24 +57,49 @@ export class StudentController implements IStudentController {
     return this.service.findOne(id);
   }
 
-  @ApiOperation({ summary: 'Registrar un usuario individualmente' })
+  @ApiOperation({
+    summary: 'Registrar un usuario individualmente',
+    description:
+      'Un usuario tiene uno o más cargos (`domain_role_ids`) y una o más especialidades (`specialty_ids`). ' +
+      'Reglas de cada cargo: si alguno es "exclusive", debe ser el único cargo; si alguno es "single_specialty", ' +
+      'debe haber exactamente una especialidad. El usuario recibe el mail de bienvenida para configurar su contraseña.',
+  })
   @ApiResponse({ status: 201, type: StudentResponseDto })
+  @ApiResponse({ status: 400, description: 'Datos inválidos o combinación de cargos/especialidades que viola las reglas' })
+  @ApiResponse({ status: 404, description: 'Cargo o especialidad no encontrado' })
+  @ApiResponse({ status: 409, description: 'DNI o email ya registrado' })
   @Post()
   create(@Body() dto: CreateStudentDto): Promise<StudentResponseDto> {
     return this.service.create(dto);
   }
 
   @ApiOperation({
-    summary: 'Actualizar datos de un usuario',
-    description: 'No permite modificar email ni contraseña.',
+    summary: 'Editar datos de un usuario',
+    description:
+      'Permite cambiar nombre, apellido, DNI, fecha de nacimiento, cargos y especialidades. No permite modificar ' +
+      'email (tiene su propio flujo con confirmación) ni contraseña, y el nombre de usuario no cambia.\n\n' +
+      '**Confirmación obligatoria:** `admin_password` es la contraseña del administrador que hace el cambio. Tiene ' +
+      'límite de intentos por admin (`ADMIN_CONFIRM_PASSWORD_MAX_ATTEMPTS` / `ADMIN_CONFIRM_PASSWORD_LOCK_TTL_MS`).\n\n' +
+      '**Cargos y especialidades:** `domain_role_ids` y `specialty_ids` REEMPLAZAN las listas completas. Se valida la ' +
+      'combinación final con las reglas de cada cargo: si alguno es "exclusive" debe ser el único cargo; si alguno es ' +
+      '"single_specialty" debe haber exactamente una especialidad. Siempre al menos un cargo y una especialidad.\n\n' +
+      '**Aviso:** el usuario recibe un mail con el antes y el después de cada dato que cambió.\n\n' +
+      '**Cuándo aplica:** las apps ven los cambios en la próxima renovación del token del usuario ' +
+      '(como máximo JWT_ACCESS_EXPIRES_IN, 15 minutos por defecto) o en su próximo inicio de sesión.',
   })
   @ApiResponse({ status: 200, type: StudentResponseDto })
+  @ApiResponse({ status: 400, description: 'Datos inválidos, sin cambios, o combinación de cargos/especialidades que viola las reglas (message: lista de reglas violadas)' })
+  @ApiResponse({ status: 403, description: 'Contraseña del administrador incorrecta (body: attemptsRemaining y retryAfterSeconds)' })
+  @ApiResponse({ status: 404, description: 'Usuario, cargo o especialidad no encontrado' })
+  @ApiResponse({ status: 409, description: 'El DNI ya está registrado' })
+  @ApiResponse({ status: 429, description: 'Demasiados intentos de contraseña de administrador (body: code ADMIN_PASSWORD_ATTEMPTS_LOCKED y retryAfterSeconds)' })
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateStudentDto,
+    @Request() req: RequestWithAdmin,
   ): Promise<StudentResponseDto> {
-    return this.service.update(id, dto);
+    return this.service.update(id, dto, req.admin.sub);
   }
 
   @ApiOperation({
@@ -152,7 +177,12 @@ export class StudentController implements IStudentController {
     return this.service.resendWelcome(id);
   }
 
-  @ApiOperation({ summary: 'Descargar CSV de ejemplo para carga masiva' })
+  @ApiOperation({
+    summary: 'Descargar Excel de ejemplo para carga masiva',
+    description:
+      'Incluye filas de ejemplo (con un cargo y con varios), los cargos válidos con sus reglas, las especialidades ' +
+      'válidas y cómo cargar varios valores en una celda (separados por punto y coma).',
+  })
   @Get('import/example')
   async downloadExample(@Res() res: Response): Promise<void> {
     const buffer = await this.service.generateExampleXlsx();
@@ -161,7 +191,13 @@ export class StudentController implements IStudentController {
     res.send(buffer);
   }
 
-  @ApiOperation({ summary: 'Previsualizar importación CSV antes de confirmar' })
+  @ApiOperation({
+    summary: 'Previsualizar importación desde Excel antes de confirmar',
+    description:
+      'Las columnas Cargo y Especialidad aceptan varios valores separados por ";" (o ","). Cada fila se valida: ' +
+      'formato, duplicados, existencia de cargos y especialidades, y las reglas de cada cargo. Las filas válidas ' +
+      'devuelven en `data` exactamente lo que espera /import/confirm (con `domainRoleIds` y `specialtyIds`).',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   @ApiResponse({ status: 200, type: ImportPreviewResultDto })
@@ -172,8 +208,14 @@ export class StudentController implements IStudentController {
     return this.service.parseImportPreview(file.buffer);
   }
 
-  @ApiOperation({ summary: 'Confirmar importación de filas válidas previamente parseadas' })
+  @ApiOperation({
+    summary: 'Confirmar importación de filas válidas previamente parseadas',
+    description:
+      'Vuelve a validar que existan los cargos y especialidades y las reglas de cada cargo en TODAS las filas. ' +
+      'Si alguna fila no las cumple, no se importa nada (400). Las filas cuyo DNI o email ya existen se saltean.',
+  })
   @ApiResponse({ status: 201, type: ImportConfirmResultDto })
+  @ApiResponse({ status: 400, description: 'Alguna fila viola las reglas de los cargos o tiene datos inválidos' })
   @Post('import/confirm')
   importConfirm(@Body() dto: ImportConfirmDto): Promise<ImportConfirmResultDto> {
     return this.service.confirmImport(dto);

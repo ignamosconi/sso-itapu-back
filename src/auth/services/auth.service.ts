@@ -160,9 +160,9 @@ export class AuthService implements IAuthService {
       nombre: student.first_name,
       apellido: student.last_name,
       username: student.username,
-      especialidad: student.specialtyName,
+      especialidades: student.specialtyNames,
       email: student.email,
-      cargo: student.domainRoleName,
+      cargos: student.domainRoleNames,
     };
   }
 
@@ -304,7 +304,7 @@ export class AuthService implements IAuthService {
   /**
    * Renovación de sesión. Exige client_id + client_secret de la app dueña de la sesión (P4) y
    * vuelve a leer al alumno de la base (P3): si lo suspendieron o borraron, la sesión se corta
-   * y si le cambiaron cargo/especialidad/nombre, el nuevo token ya lo refleja.
+   * y si le cambiaron cargos/especialidades/nombre, el nuevo token ya lo refleja.
    */
   async refreshTokens(dto: RefreshRequestDto): Promise<TokenResponseDto> {
     const clientId = parseInt(dto.client_id, 10);
@@ -352,9 +352,9 @@ export class AuthService implements IAuthService {
       nombre: student.first_name,
       apellido: student.last_name,
       username: student.username,
-      especialidad: student.specialty.name,
+      especialidades: student.specialties.map(sp => sp.name),
       email: student.email,
-      cargo: student.domainRole.name,
+      cargos: student.domainRoles.map(r => r.name),
     };
 
     const inactivityExpiry = new Date(Date.now() + this.parseExpiresIn(this.refreshExpiresIn) * 1000);
@@ -396,9 +396,9 @@ export class AuthService implements IAuthService {
       nombre: payload.nombre,
       apellido: payload.apellido,
       username: payload.username,
-      especialidad: payload.especialidad,
+      especialidades: payload.especialidades,
       email: payload.email,
-      cargo: payload.cargo,
+      cargos: payload.cargos,
     };
   }
 }

@@ -6,6 +6,7 @@ export const KNOWN_WEAK_SECRETS = new Set([
   'cambia_este_secret_admin_acceso',
   'cambia_este_secret_admin_refresco',
   'cambia_esta_password_min_8_caracteres',
+  'Cambia_Esta_Password_1', // ADMIN_PASSWORD_SEEDER por defecto (cumple la política, pero es pública)
   'cambia_esta_password_swagger',
   'admin',   // SWAGGER_USER por defecto
   'cambia_esta_password_redis',
